@@ -2,10 +2,10 @@
   "$schema": "./.dt-app/app.config.schema.json",
   "environmentUrl": "https://axis-prod.apps.dynatrace.com/",
   "app": {
-    "name": "axis-pi",
+    "name": "Axis Problem Intelligence",
     "version": "0.0.0",
-    "description": "A starting project with routing, fetching data, and charting",
-    "id": "my.axis.pi",
+    "description": "Axis Bank Dynatrace Problem Intelligence and SRE Operations application",
+    "id": "my.axis.problem.intelligence",
     "scopes": [
       { "name": "storage:logs:read", "comment": "default template" },
       { "name": "storage:buckets:read", "comment": "default template" }

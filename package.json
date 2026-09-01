@@ -1,7 +1,7 @@
 {
-  "name": "axis-pi",
+  "name": "axis-dynatrace-problem-intelligence",
   "version": "0.0.0",
-  "description": "A starting project with routing, fetching data, and charting",
+  "description": "Axis Bank Dynatrace Problem Intelligence and SRE Operations application",
   "scripts": {
     "build": "dt-app build",
     "start": "dt-app dev",
