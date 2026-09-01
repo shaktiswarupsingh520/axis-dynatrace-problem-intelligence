@@ -1,0 +1,55 @@
+{
+  "name": "axis-pi",
+  "version": "0.0.0",
+  "description": "A starting project with routing, fetching data, and charting",
+  "scripts": {
+    "build": "dt-app build",
+    "start": "dt-app dev",
+    "create:function": "dt-app function create",
+    "create:action": "dt-app action create",
+    "uninstall": "dt-app uninstall",
+    "deploy": "dt-app deploy",
+    "update": "dt-app update",
+    "info": "dt-app info",
+    "help": "dt-app help",
+    "lint": "eslint ."
+  },
+  "engines": {
+    "node": ">=16.13.0"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@dynatrace-sdk/app-environment": "^1.1.4",
+    "@dynatrace-sdk/client-query": "^1.26.0",
+    "@dynatrace-sdk/error-handlers": "^1.3.1",
+    "@dynatrace-sdk/navigation": "^2.3.0",
+    "@dynatrace-sdk/react-hooks": "^1.14.2",
+    "@dynatrace-sdk/user-preferences": "^1.1.4",
+    "@dynatrace/strato-components": "^3.10.4",
+    "@dynatrace/strato-design-tokens": "^1.5.2",
+    "@dynatrace/strato-icons": "^2.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-is": "^18.3.1",
+    "react-intl": "^6.8.9",
+    "react-router-dom": "^6.30.4"
+  },
+  "devDependencies": {
+    "dt-app": "1.16.1",
+    "@eslint/js": "^9.39.5",
+    "@microsoft/eslint-plugin-sdl": "^1.1.0",
+    "@types/node": "^24.13.3",
+    "@types/react": "^18.3.31",
+    "@types/react-dom": "^18.3.7",
+    "eslint": "^9.39.5",
+    "eslint-plugin-n": "^18.3.0",
+    "eslint-plugin-no-secrets": "^2.3.3",
+    "eslint-plugin-no-unsanitized": "^4.1.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-security": "^4.0.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.66.0"
+  }
+}
