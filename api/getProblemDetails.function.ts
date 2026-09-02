@@ -1,4 +1,5 @@
 import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
+import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 interface GetProblemDetailsPayload {
   problemId: string;
@@ -8,6 +9,7 @@ interface EvidenceLike {
   displayName?: string;
   evidenceType?: string;
   entity?: { name?: string };
+  groupingEntity?: { name?: string };
   rootCauseRelevant?: boolean;
 }
 
@@ -18,53 +20,171 @@ interface ImpactLike {
   numberOfPotentiallyAffectedServiceCalls?: number;
 }
 
-const text = (value?: string) => (value ?? '').trim();
+type DqlRecord = Record<string, unknown>;
 
-const buildAnalysis = (problem: {
-  title?: string;
-  severityLevel?: string;
-  impactLevel?: string;
-  rootCauseEntity?: { name?: string };
-  evidenceDetails?: { details?: EvidenceLike[] };
-  impactAnalysis?: { impacts?: ImpactLike[] };
-}) => {
+const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+
+const recordValue = (value: unknown): DqlRecord | undefined =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as DqlRecord)
+    : undefined;
+
+const stringArray = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+
+const executeDql = async (query: string): Promise<DqlRecord[]> => {
+  const started = await queryExecutionClient.queryExecute({
+    body: { query },
+  });
+
+  if (started.result?.records) {
+    return started.result.records as DqlRecord[];
+  }
+
+  if (!started.requestToken) {
+    return [];
+  }
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const polled = await queryExecutionClient.queryPoll({
+      requestToken: started.requestToken,
+    });
+
+    if (polled.result?.records) {
+      return polled.result.records as DqlRecord[];
+    }
+
+    if (polled.state === 'FAILED' || polled.state === 'CANCELLED' || polled.state === 'RESULT_GONE') {
+      return [];
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  return [];
+};
+
+const escapeDqlString = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+const loadGrailProblemContext = async (problemId: string) => {
+  const safeId = escapeDqlString(problemId);
+  const problemQuery = `fetch dt.davis.problems
+| filter display_id == "${safeId}"
+| fields display_id, event.name, event.description, event.start, event.end, dt.analysis.ready, dt.davis.event_ids, dt.davis.affected_users_count, dt.davis.impact_level, root_cause.smartscape_entity, smartscape.affected_entities
+| limit 1`;
+
+  const problemRecords = await executeDql(problemQuery);
+  const problemRecord = problemRecords[0];
+  if (!problemRecord) {
+    return undefined;
+  }
+
+  const eventIds = stringArray(problemRecord['dt.davis.event_ids']);
+  let eventRecords: DqlRecord[] = [];
+
+  if (eventIds.length > 0) {
+    const eventArray = eventIds.map((id) => `"${escapeDqlString(id)}"`).join(', ');
+    const eventQuery = `fetch dt.davis.events
+| filter in(event.id, array(${eventArray}))
+| fields event.id, event.name, event.description, event.start, event.end, event.type, event.category, event.severity, dt.smartscape_source.id, dt.smartscape_source.type, dt.davis.is_rootcause_relevant, dt.davis.analysis_time_budget, dt.davis.analysis_trigger_delay
+| sort event.start asc
+| limit 100`;
+    eventRecords = await executeDql(eventQuery);
+  }
+
+  return { problemRecord, eventRecords };
+};
+
+const buildCausalAnalysis = (
+  problem: {
+    title?: string;
+    impactLevel?: string;
+    rootCauseEntity?: { name?: string; entityId?: { id?: string; type?: string } };
+    evidenceDetails?: { details?: EvidenceLike[] };
+    impactAnalysis?: { impacts?: ImpactLike[] };
+  },
+  grailContext?: {
+    problemRecord: DqlRecord;
+    eventRecords: DqlRecord[];
+  },
+) => {
   const title = text(problem.title) || 'Dynatrace problem';
   const evidence = problem.evidenceDetails?.details ?? [];
   const rootCauseEvidence = evidence.find((item) => item.rootCauseRelevant);
-  const rootCause =
-    text(problem.rootCauseEntity?.name) ||
-    text(rootCauseEvidence?.entity?.name) ||
-    'Davis did not return a definitive root-cause entity';
+  const grailRootCause = recordValue(grailContext?.problemRecord['root_cause.smartscape_entity']);
+  const grailRootCauseName = text(grailRootCause?.name);
+  const grailRootCauseId = text(grailRootCause?.id);
+  const grailRootCauseType = text(grailRootCause?.type);
 
-  const evidenceText = evidence
-    .map((item) => `${text(item.displayName) || text(item.evidenceType)}${item.entity?.name ? ` on ${item.entity.name}` : ''}`)
+  const apiRootCauseName = text(problem.rootCauseEntity?.name);
+  const apiRootCauseId = text(problem.rootCauseEntity?.entityId?.id);
+  const apiRootCauseType = text(problem.rootCauseEntity?.entityId?.type);
+  const evidenceRootCauseName = text(rootCauseEvidence?.entity?.name);
+  const evidenceRootCauseType = text(rootCauseEvidence?.entity?.entityId?.type);
+
+  const rootCauseName = grailRootCauseName || apiRootCauseName || evidenceRootCauseName;
+  const rootCauseId = grailRootCauseId || apiRootCauseId;
+  const rootCauseType = grailRootCauseType || apiRootCauseType || evidenceRootCauseType;
+
+  const eventDescriptions = (grailContext?.eventRecords ?? [])
+    .map((event) => text(event['event.description']))
+    .filter(Boolean);
+  const eventNames = (grailContext?.eventRecords ?? [])
+    .map((event) => text(event['event.name']))
+    .filter(Boolean);
+  const causalEvents = (grailContext?.eventRecords ?? [])
+    .filter((event) => event['dt.davis.is_rootcause_relevant'] === true)
+    .map((event) => ({
+      id: text(event['event.id']),
+      name: text(event['event.name']),
+      description: text(event['event.description']),
+      entityId: text(event['dt.smartscape_source.id']),
+      entityType: text(event['dt.smartscape_source.type']),
+      category: text(event['event.category']),
+      severity: event['event.severity'],
+      start: event['event.start'],
+    }))
+    .filter((event) => event.id || event.name || event.description);
+
+  const apiEvidenceText = evidence
+    .map((item) => {
+      const display = text(item.displayName) || text(item.evidenceType);
+      const entity = text(item.entity?.name);
+      const grouping = text(item.groupingEntity?.name);
+      return [display, entity ? `entity ${entity}` : '', grouping ? `grouped by ${grouping}` : '']
+        .filter(Boolean)
+        .join(' — ');
+    })
     .filter(Boolean);
 
-  const combined = `${title} ${evidenceText.join(' ')}`.toLowerCase();
-  let probableCause = 'The problem is correlated from the available Davis evidence. Review the listed evidence and affected entity before remediation.';
-  let remediation = 'Validate the root-cause entity, review the related metric/log evidence, and confirm whether the condition is still active before making a change.';
+  const allEvidence = [...new Set([...eventDescriptions, ...apiEvidenceText])].slice(0, 12);
+  const primaryEvent = causalEvents[0];
+  const ready = grailContext?.problemRecord['dt.analysis.ready'];
 
-  if (combined.includes('cpu') || combined.includes('processor') || combined.includes('saturation')) {
-    probableCause = 'CPU resource saturation or insufficient CPU capacity is the most likely contributing factor based on the problem evidence.';
-    remediation = 'Check CPU utilization and CPU requests/limits on the affected workload or host, identify competing workloads, and scale or rebalance capacity if sustained saturation is confirmed.';
-  } else if (combined.includes('memory') || combined.includes('out of memory') || combined.includes('oom')) {
-    probableCause = 'Memory pressure or insufficient memory capacity is the most likely contributing factor based on the problem evidence.';
-    remediation = 'Check memory utilization, container limits and JVM/process memory behavior; investigate leaks or workload growth and increase or rebalance memory capacity where required.';
-  } else if (combined.includes('response time') || combined.includes('slowdown') || combined.includes('latency')) {
-    probableCause = 'Elevated response time or latency is the primary observed symptom and may be caused by downstream dependency, resource or application performance degradation.';
-    remediation = 'Trace the affected service path, identify the slowest dependency or endpoint, and validate database, connection-pool and host resource health before tuning the application.';
-  } else if (combined.includes('error') || combined.includes('exception') || combined.includes('failure')) {
-    probableCause = 'An application or dependency error condition is the primary observed signal. The correlated evidence should be used to identify the failing component.';
-    remediation = 'Review the correlated exceptions and failing service/dependency, validate recent deployments or configuration changes, and address the first failing component in the dependency chain.';
-  } else if (combined.includes('disk') || combined.includes('storage')) {
-    probableCause = 'Disk or storage capacity/health degradation is the most likely contributing factor.';
-    remediation = 'Check filesystem utilization, I/O latency and storage health; remove unnecessary data only under the approved retention policy and increase capacity if growth is expected.';
-  } else if (combined.includes('connection pool') || combined.includes('jdbc')) {
-    probableCause = 'Connection-pool exhaustion or database connectivity pressure is the most likely contributing factor.';
-    remediation = 'Check pool usage, active/idle connections, wait time and database health; identify long-running queries or leaked connections before increasing pool limits.';
-  } else if (combined.includes('unavailable') || combined.includes('monitoring unavailable')) {
-    probableCause = 'The affected entity or its monitoring path became unavailable, so availability or connectivity is the primary suspected cause.';
-    remediation = 'Validate host/process/network availability, OneAgent status and the affected dependency path. Restore the first unavailable component and then confirm monitoring recovery.';
+  let probableCause: string;
+  let remediation: string;
+  let confidence: string;
+
+  if (rootCauseName) {
+    const entityLabel = [rootCauseName, rootCauseType ? `(${rootCauseType})` : ''].filter(Boolean).join(' ');
+    const supporting = primaryEvent?.description || primaryEvent?.name || allEvidence[0];
+    probableCause = supporting
+      ? `Dynatrace Intelligence identified ${entityLabel} as the root-cause entity. The strongest supporting signal is: ${supporting}.`
+      : `Dynatrace Intelligence identified ${entityLabel} as the root-cause entity for this problem.`;
+    remediation = `Start investigation at ${entityLabel}. Validate the metric/event that triggered the problem, then follow the dependency path from this entity to the impacted service or workload before changing configuration.`;
+    confidence = 'High';
+  } else if (primaryEvent?.entityId) {
+    probableCause = `No explicit problem root-cause entity is currently exposed, but the root-cause-relevant Davis event points to ${primaryEvent.entityId}${primaryEvent.entityType ? ` (${primaryEvent.entityType})` : ''}. Supporting signal: ${primaryEvent.description || primaryEvent.name || 'Davis event'}.`;
+    remediation = `Investigate ${primaryEvent.entityId} first. Correlate its event timeline with the affected entities and verify the underlying metric, log, deployment or dependency signal before remediation.`;
+    confidence = ready === false ? 'Pending Davis analysis' : 'Medium';
+  } else if (allEvidence.length > 0) {
+    probableCause = `Dynatrace has not exposed a definitive root-cause entity yet. The strongest observed evidence is: ${allEvidence[0]}. This is evidence, not a confirmed root cause.`;
+    remediation = 'Wait for Dynatrace Intelligence analysis to become ready, then re-evaluate the root-cause entity and causal events. Until then, investigate the entities named in the evidence without treating any single one as confirmed root cause.';
+    confidence = ready === false ? 'Pending Davis analysis' : 'Evidence only';
+  } else {
+    probableCause = 'Dynatrace has not exposed enough causal evidence to determine a root cause yet.';
+    remediation = 'Wait for Dynatrace Intelligence analysis to complete and refresh the problem details before assigning a root cause.';
+    confidence = ready === false ? 'Pending Davis analysis' : 'Insufficient evidence';
   }
 
   const impacts = problem.impactAnalysis?.impacts ?? [];
@@ -77,13 +197,25 @@ const buildAnalysis = (problem: {
     impacts.length > 0 ? `Davis identified ${impacts.length} impact relationship${impacts.length === 1 ? '' : 's'}.` : '',
   ].filter(Boolean);
 
+  const description = text(grailContext?.problemRecord['event.description']) || allEvidence.join('. ') || title;
+
   return {
-    description: evidenceText.length > 0 ? evidenceText.slice(0, 12).join('. ') : title,
-    rootCause,
+    description,
+    rootCause: rootCauseName || 'No definitive root-cause entity exposed yet',
+    rootCauseEntityId: rootCauseId || undefined,
+    rootCauseEntityType: rootCauseType || undefined,
     probableCause,
     impactSummary: impactParts.join(' ') || `Impact level: ${problem.impactLevel ?? 'not provided'}.`,
     remediation,
-    confidence: rootCauseEvidence || problem.rootCauseEntity ? 'High' : 'Medium',
+    confidence,
+    evidence: allEvidence,
+    causalEvents,
+    eventIds: stringArray(grailContext?.problemRecord['dt.davis.event_ids']),
+    analysisReady: ready,
+    affectedUsers: typeof grailContext?.problemRecord['dt.davis.affected_users_count'] === 'number'
+      ? grailContext.problemRecord['dt.davis.affected_users_count']
+      : undefined,
+    eventNames: [...new Set(eventNames)].slice(0, 12),
   };
 };
 
@@ -97,8 +229,10 @@ export default async function (payload: GetProblemDetailsPayload) {
     fields: 'evidenceDetails,impactAnalysis,recentComments',
   });
 
+  const grailContext = await loadGrailProblemContext(payload.problemId);
+
   return {
     ...problem,
-    problemAnalysis: buildAnalysis(problem),
+    problemAnalysis: buildCausalAnalysis(problem, grailContext),
   };
 }
