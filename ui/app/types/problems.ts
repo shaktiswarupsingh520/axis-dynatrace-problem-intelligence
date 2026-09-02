@@ -28,6 +28,15 @@ export interface Impact {
   numberOfPotentiallyAffectedServiceCalls?: number;
 }
 
+export interface ProblemAnalysis {
+  description?: string;
+  rootCause?: string;
+  probableCause?: string;
+  impactSummary?: string;
+  remediation?: string;
+  confidence?: string;
+}
+
 export interface Problem {
   problemId?: string;
   displayId?: string;
@@ -55,6 +64,7 @@ export interface Problem {
       createdAt?: number;
     }>;
   };
+  problemAnalysis?: ProblemAnalysis;
 }
 
 export interface ProblemsResponse {
