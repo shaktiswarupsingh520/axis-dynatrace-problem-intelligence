@@ -7,8 +7,10 @@
     "description": "Axis Bank Dynatrace Problem Intelligence and SRE Operations application",
     "id": "my.axis.problem.intelligence",
     "scopes": [
-      { "name": "storage:logs:read", "comment": "default template" },
-      { "name": "storage:buckets:read", "comment": "default template" }
+      {
+        "name": "environment-api:problems:read",
+        "comment": "Read Dynatrace problems"
+      }
     ]
   }
 }
