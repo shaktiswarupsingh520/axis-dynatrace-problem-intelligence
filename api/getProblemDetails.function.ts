@@ -33,32 +33,36 @@ const stringArray = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
 
 const executeDql = async (query: string): Promise<DqlRecord[]> => {
-  const started = await queryExecutionClient.queryExecute({
-    body: { query },
-  });
-
-  if (started.result?.records) {
-    return started.result.records as DqlRecord[];
-  }
-
-  if (!started.requestToken) {
-    return [];
-  }
-
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const polled = await queryExecutionClient.queryPoll({
-      requestToken: started.requestToken,
+  try {
+    const started = await queryExecutionClient.queryExecute({
+      body: { query },
     });
 
-    if (polled.result?.records) {
-      return polled.result.records as DqlRecord[];
+    if (started.result?.records) {
+      return started.result.records as DqlRecord[];
     }
 
-    if (polled.state === 'FAILED' || polled.state === 'CANCELLED' || polled.state === 'RESULT_GONE') {
+    if (!started.requestToken) {
       return [];
     }
 
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const polled = await queryExecutionClient.queryPoll({
+        requestToken: started.requestToken,
+      });
+
+      if (polled.result?.records) {
+        return polled.result.records as DqlRecord[];
+      }
+
+      if (polled.state === 'FAILED' || polled.state === 'CANCELLED' || polled.state === 'RESULT_GONE') {
+        return [];
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  } catch {
+    return [];
   }
 
   return [];
