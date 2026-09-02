@@ -28,13 +28,32 @@ export interface Impact {
   numberOfPotentiallyAffectedServiceCalls?: number;
 }
 
+export interface CausalEvent {
+  id?: string;
+  name?: string;
+  description?: string;
+  entityId?: string;
+  entityType?: string;
+  category?: string;
+  severity?: unknown;
+  start?: unknown;
+}
+
 export interface ProblemAnalysis {
   description?: string;
   rootCause?: string;
+  rootCauseEntityId?: string;
+  rootCauseEntityType?: string;
   probableCause?: string;
   impactSummary?: string;
   remediation?: string;
   confidence?: string;
+  evidence?: string[];
+  causalEvents?: CausalEvent[];
+  eventIds?: string[];
+  eventNames?: string[];
+  analysisReady?: unknown;
+  affectedUsers?: number;
 }
 
 export interface Problem {
