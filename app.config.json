@@ -3,7 +3,7 @@
   "environmentUrl": "https://axis-prod.apps.dynatrace.com/",
   "app": {
     "name": "Axis Problem Intelligence",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "description": "Axis Bank Dynatrace Problem Intelligence and SRE Operations application",
     "id": "my.axis.problem.intelligence",
     "scopes": [
