@@ -11,9 +11,7 @@ interface GetProblemsPayload {
 const escapeSelectorValue = (value: string) =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
-export default async function (
-  payload: GetProblemsPayload = {},
-) {
+export default async function (payload: GetProblemsPayload = {}) {
   const {
     from = 'now-24h',
     to = 'now',
@@ -24,18 +22,12 @@ export default async function (
 
   const selectors: string[] = [];
 
-  if (problemSelector) {
-    selectors.push(problemSelector);
-  }
-
+  if (problemSelector) selectors.push(problemSelector);
   if (managementZoneId) {
-    selectors.push(
-      `managementZoneIds("${escapeSelectorValue(managementZoneId)}")`,
-    );
+    selectors.push(`managementZoneIds("${escapeSelectorValue(managementZoneId)}")`);
   }
 
-  const finalProblemSelector =
-    selectors.length > 0 ? selectors.join(',') : undefined;
+  const finalProblemSelector = selectors.length > 0 ? selectors.join(',') : undefined;
 
   try {
     const response = await problemsClient.getProblems({
@@ -53,7 +45,7 @@ export default async function (
       pageSize: response.pageSize,
       warnings: response.warnings ?? [],
     };
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('getProblems failed', {
       payload,
       problemSelector: finalProblemSelector,
