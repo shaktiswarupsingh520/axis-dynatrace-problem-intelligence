@@ -21,36 +21,25 @@ export default async function (payload: GetProblemsPayload = {}) {
   } = payload;
 
   const selectors: string[] = [];
-
   if (problemSelector) selectors.push(problemSelector);
   if (managementZoneId) {
     selectors.push(`managementZoneIds("${escapeSelectorValue(managementZoneId)}")`);
   }
 
   const finalProblemSelector = selectors.length > 0 ? selectors.join(',') : undefined;
+  const response = await problemsClient.getProblems({
+    from,
+    to,
+    problemSelector: finalProblemSelector,
+    pageSize,
+    sort: '-startTime',
+  });
 
-  try {
-    const response = await problemsClient.getProblems({
-      from,
-      to,
-      problemSelector: finalProblemSelector,
-      pageSize,
-      sort: '-startTime',
-    });
-
-    return {
-      problems: response.problems,
-      totalCount: response.totalCount,
-      nextPageKey: response.nextPageKey,
-      pageSize: response.pageSize,
-      warnings: response.warnings ?? [],
-    };
-  } catch (error: unknown) {
-    console.error('getProblems failed', {
-      payload,
-      problemSelector: finalProblemSelector,
-      error,
-    });
-    throw error;
-  }
+  return {
+    problems: response.problems,
+    totalCount: response.totalCount,
+    nextPageKey: response.nextPageKey,
+    pageSize: response.pageSize,
+    warnings: response.warnings ?? [],
+  };
 }
