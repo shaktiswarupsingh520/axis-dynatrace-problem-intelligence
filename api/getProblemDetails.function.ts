@@ -8,7 +8,7 @@ interface GetProblemDetailsPayload {
 interface EvidenceLike {
   displayName?: string;
   evidenceType?: string;
-  entity?: { name?: string };
+  entity?: { name?: string; entityId?: { id?: string; type?: string } };
   groupingEntity?: { name?: string };
   rootCauseRelevant?: boolean;
 }
@@ -120,10 +120,11 @@ const buildCausalAnalysis = (
   const apiRootCauseId = text(problem.rootCauseEntity?.entityId?.id);
   const apiRootCauseType = text(problem.rootCauseEntity?.entityId?.type);
   const evidenceRootCauseName = text(rootCauseEvidence?.entity?.name);
+  const evidenceRootCauseId = text(rootCauseEvidence?.entity?.entityId?.id);
   const evidenceRootCauseType = text(rootCauseEvidence?.entity?.entityId?.type);
 
   const rootCauseName = grailRootCauseName || apiRootCauseName || evidenceRootCauseName;
-  const rootCauseId = grailRootCauseId || apiRootCauseId;
+  const rootCauseId = grailRootCauseId || apiRootCauseId || evidenceRootCauseId;
   const rootCauseType = grailRootCauseType || apiRootCauseType || evidenceRootCauseType;
 
   const eventDescriptions = (grailContext?.eventRecords ?? [])
@@ -176,15 +177,15 @@ const buildCausalAnalysis = (
   } else if (primaryEvent?.entityId) {
     probableCause = `No explicit problem root-cause entity is currently exposed, but the root-cause-relevant Davis event points to ${primaryEvent.entityId}${primaryEvent.entityType ? ` (${primaryEvent.entityType})` : ''}. Supporting signal: ${primaryEvent.description || primaryEvent.name || 'Davis event'}.`;
     remediation = `Investigate ${primaryEvent.entityId} first. Correlate its event timeline with the affected entities and verify the underlying metric, log, deployment or dependency signal before remediation.`;
-    confidence = ready === false ? 'Pending Davis analysis' : 'Medium';
+    confidence = ready === false ? 'Pending Dynatrace Intelligence analysis' : 'Medium';
   } else if (allEvidence.length > 0) {
     probableCause = `Dynatrace has not exposed a definitive root-cause entity yet. The strongest observed evidence is: ${allEvidence[0]}. This is evidence, not a confirmed root cause.`;
     remediation = 'Wait for Dynatrace Intelligence analysis to become ready, then re-evaluate the root-cause entity and causal events. Until then, investigate the entities named in the evidence without treating any single one as confirmed root cause.';
-    confidence = ready === false ? 'Pending Davis analysis' : 'Evidence only';
+    confidence = ready === false ? 'Pending Dynatrace Intelligence analysis' : 'Evidence only';
   } else {
     probableCause = 'Dynatrace has not exposed enough causal evidence to determine a root cause yet.';
     remediation = 'Wait for Dynatrace Intelligence analysis to complete and refresh the problem details before assigning a root cause.';
-    confidence = ready === false ? 'Pending Davis analysis' : 'Insufficient evidence';
+    confidence = ready === false ? 'Pending Dynatrace Intelligence analysis' : 'Insufficient evidence';
   }
 
   const impacts = problem.impactAnalysis?.impacts ?? [];
@@ -194,7 +195,7 @@ const buildCausalAnalysis = (
     problem.impactLevel ? `Impact level: ${problem.impactLevel}.` : '',
     users > 0 ? `Estimated affected users: ${users}.` : '',
     calls > 0 ? `Potentially affected service calls: ${calls}.` : '',
-    impacts.length > 0 ? `Davis identified ${impacts.length} impact relationship${impacts.length === 1 ? '' : 's'}.` : '',
+    impacts.length > 0 ? `Dynatrace Intelligence identified ${impacts.length} impact relationship${impacts.length === 1 ? '' : 's'}.` : '',
   ].filter(Boolean);
 
   const description = text(grailContext?.problemRecord['event.description']) || allEvidence.join('. ') || title;
