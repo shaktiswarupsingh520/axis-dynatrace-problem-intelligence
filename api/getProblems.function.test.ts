@@ -14,15 +14,9 @@ describe('getProblems.function', () => {
     jest.clearAllMocks();
   });
 
-  it('should fetch problems using the default 24-hour timeframe', async () => {
+  it('should fetch problems newest first using the default timeframe', async () => {
     mockedGetProblems.mockResolvedValue({
-      problems: [
-        {
-          problemId: 'abc123',
-          displayId: 'P-123456',
-          title: 'Test problem',
-        },
-      ],
+      problems: [{ problemId: 'abc123', displayId: 'P-123456', title: 'Test problem' }],
       totalCount: 1,
       pageSize: 100,
     } as never);
@@ -34,15 +28,15 @@ describe('getProblems.function', () => {
       to: 'now',
       problemSelector: undefined,
       pageSize: 100,
+      sort: '-startTime',
     });
-
     expect(result.problems).toHaveLength(1);
     expect(result.totalCount).toBe(1);
     expect(result.pageSize).toBe(100);
     expect(result.warnings).toEqual([]);
   });
 
-  it('should pass custom filters to Dynatrace', async () => {
+  it('should combine a custom selector with a management zone selector', async () => {
     mockedGetProblems.mockResolvedValue({
       problems: [],
       totalCount: 0,
@@ -55,16 +49,17 @@ describe('getProblems.function', () => {
       from: 'now-7d',
       to: 'now',
       problemSelector: 'status("OPEN")',
+      managementZoneId: 'mz-123',
       pageSize: 50,
     });
 
     expect(mockedGetProblems).toHaveBeenCalledWith({
       from: 'now-7d',
       to: 'now',
-      problemSelector: 'status("OPEN")',
+      problemSelector: 'status("OPEN"),managementZoneIds("mz-123")',
       pageSize: 50,
+      sort: '-startTime',
     });
-
     expect(result).toEqual({
       problems: [],
       totalCount: 0,
