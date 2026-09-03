@@ -10,6 +10,10 @@ interface AlertDumpPayload {
   limit?: number;
 }
 
+interface QueryResult {
+  records?: Array<Row | null>;
+}
+
 const escapeDql = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -27,7 +31,8 @@ async function executeDql(query: string, max: number): Promise<Row[]> {
     if (!result && state === 'RUNNING') await sleep(300);
   }
   if (!result) throw new Error(`Alert dump query did not complete (state: ${state}).`);
-  return (result.records ?? []).filter(Boolean) as Row[];
+  const queryResult = result as QueryResult;
+  return (queryResult.records ?? []).filter(Boolean);
 }
 
 export default async function (payload: AlertDumpPayload = {}) {
