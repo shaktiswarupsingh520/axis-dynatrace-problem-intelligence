@@ -27,8 +27,9 @@ async function dql(query: string, max = 200): Promise<Row[]> {
     if (!result && state === 'RUNNING') await sleep(250);
   }
   if (!result) throw new Error(`RCA evidence query did not complete (state: ${state}).`);
-  const records: unknown = result.records;
-  return Array.isArray(records) ? records.filter((record): record is Row => record !== null && typeof record === 'object' && !Array.isArray(record)) : [];
+  const recordsValue: unknown = result.records;
+  if (!Array.isArray(recordsValue)) return [];
+  return recordsValue.filter((record): record is Row => record !== null && typeof record === 'object' && !Array.isArray(record));
 }
 
 const durationMinutes = (start: string, end: string) => {
@@ -67,9 +68,7 @@ async function askAssist(problemId: string, evidence: Evidence): Promise<{ text:
   const prompt = `You are the senior Dynatrace SRE RCA analyst. Produce an evidence-first RCA for Dynatrace Problem ${problemId}. The application already retrieved the relevant Davis/Grail evidence. Do not give generic troubleshooting advice and do not claim a root cause that is not supported by the evidence.\n\nROOT-CAUSE RULES:\n- First check nativeRootCauseEntity. If present, treat it as the strongest Davis root-cause signal and name the exact entity.\n- If nativeRootCauseEntity is empty, inspect root-cause-relevant events, snapshots, affected entities, correlated events, logs and deployments for a causal chain.\n- Distinguish PROVEN ROOT CAUSE from PROBABLE CAUSE.\n- If no definitive causal entity is supported, explicitly say: "Davis did not return a definitive root-cause entity; the following is an evidence-based probable cause."\n- Never invent metrics, entities, deployments, timestamps, affected users, remediation results or service names.\n- Recommendations are proposed actions only.\n- Use recurrence evidence from pastOccurrences and relatedProblems.\n\nReturn exactly these sections:\n1. Executive Summary\n2. Root Cause Assessment\n3. Technical Root-Cause Chain\n4. Evidence & Timeline\n5. Recurrence Pattern\n6. Business / Technical Impact\n7. Deployment / Change Correlation\n8. Immediate Remediation\n9. Permanent Prevention\n10. Validation Checklist\n11. Confidence & Evidence Gaps\n\nRoot Cause Assessment must contain: definitive root-cause entity (or explicitly not proven), supporting evidence, confidence High/Medium/Low, and why alternative causes are weaker. Technical Root-Cause Chain must connect signal -> contributing condition -> impacted component -> observed problem.\n\nDYNATRACE EVIDENCE:\n${context}`;
   const response = await publicClient.recommenderConversation({ acceptType: 'application/json', body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: context }, { type: 'instruction', value: 'Use only the supplied incident evidence. Do not produce a generic RCA. State clearly when a definitive root cause is not proven.' }], annotations: { origin: 'Axis Problem Intelligence RCA', problemId } } });
   if (response.status === 'FAILED') throw new Error('Dynatrace Assist RCA failed. Verify davis-copilot:conversations:execute and tenant availability.');
-  const responseText: unknown = response.text;
-  const normalizedText = typeof responseText === 'string' ? responseText.trim() : '';
-  return { text: normalizedText, status: response.status };
+  return { text: response.text as string, status: String(response.status) };
 }
 
 export default async function (payload: AnalyzePayload) {
