@@ -2,7 +2,6 @@ import { publicClient } from '@dynatrace-sdk/client-davis-copilot';
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 type Row = Record<string, unknown>;
-interface QueryResult { records?: Array<Row | null>; }
 interface AnalyzePayload { problemId: string; }
 interface Evidence { problem: Row; events: Row[]; snapshots: Row[]; history: Row[]; related: Row[]; logs: Row[]; deployments: Row[]; }
 
@@ -28,8 +27,8 @@ async function dql(query: string, max = 200): Promise<Row[]> {
     if (!result && state === 'RUNNING') await sleep(250);
   }
   if (!result) throw new Error(`RCA evidence query did not complete (state: ${state}).`);
-  const records = result.records;
-  return Array.isArray(records) ? records.filter((record): record is Row => record !== null) : [];
+  const records: unknown = result.records;
+  return Array.isArray(records) ? records.filter((record): record is Row => record !== null && typeof record === 'object' && !Array.isArray(record)) : [];
 }
 
 const durationMinutes = (start: string, end: string) => {
@@ -69,7 +68,8 @@ async function askAssist(problemId: string, evidence: Evidence): Promise<{ text:
   const response = await publicClient.recommenderConversation({ acceptType: 'application/json', body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: context }, { type: 'instruction', value: 'Use only the supplied incident evidence. Do not produce a generic RCA. State clearly when a definitive root cause is not proven.' }], annotations: { origin: 'Axis Problem Intelligence RCA', problemId } } });
   if (response.status === 'FAILED') throw new Error('Dynatrace Assist RCA failed. Verify davis-copilot:conversations:execute and tenant availability.');
   const responseText: unknown = response.text;
-  return { text: typeof responseText === 'string' ? responseText.trim() : '', status: response.status };
+  const normalizedText = typeof responseText === 'string' ? responseText.trim() : '';
+  return { text: normalizedText, status: response.status };
 }
 
 export default async function (payload: AnalyzePayload) {
