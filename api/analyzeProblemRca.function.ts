@@ -28,18 +28,17 @@ async function dql(query: string, max = 200): Promise<Row[]> {
   const response = await queryExecutionClient.queryExecute({
     body: { query, requestTimeoutMilliseconds: 30000, maxResultRecords: max },
   });
-  let result = response.result;
+  let result = response.result as QueryResult | undefined;
   let state = response.state;
   const token = response.requestToken;
   for (let attempt = 0; !result && token && attempt < 30; attempt += 1) {
     const poll = await queryExecutionClient.queryPoll({ requestToken: token, requestTimeoutMilliseconds: 30000 });
     state = poll.state;
-    result = poll.result;
+    result = poll.result as QueryResult | undefined;
     if (!result && state === 'RUNNING') await sleep(250);
   }
   if (!result) throw new Error(`RCA evidence query did not complete (state: ${state}).`);
-  const queryResult = result as QueryResult;
-  return (queryResult.records ?? []).filter(Boolean);
+  return ((result as QueryResult).records ?? []).filter(Boolean) as Row[];
 }
 
 const durationMinutes = (start: string, end: string) => {
