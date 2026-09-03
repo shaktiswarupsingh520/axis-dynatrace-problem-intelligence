@@ -11,11 +11,12 @@ interface AlertDumpPayload {
   limit?: number;
 }
 
-const text = (value: unknown): string => {
+const dqlText = (value: unknown): string => {
   if (value === null || value === undefined) return '';
-  if (Array.isArray(value)) return value.map(text).filter(Boolean).join('; ');
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(dqlText).filter(Boolean).join('; ');
+  const serialized = JSON.stringify(value);
+  return serialized ?? '';
 };
 
 const escapeDql = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -25,17 +26,18 @@ async function executeDql(query: string, max: number): Promise<Row[]> {
   const response = await queryExecutionClient.queryExecute({
     body: { query, requestTimeoutMilliseconds: 30000, maxResultRecords: max },
   });
-  let result = response.result as QueryResult | undefined;
+  let result = response.result;
   let state = response.state;
   const token = response.requestToken;
   for (let attempt = 0; !result && token && attempt < 30; attempt += 1) {
     const poll = await queryExecutionClient.queryPoll({ requestToken: token, requestTimeoutMilliseconds: 30000 });
     state = poll.state;
-    result = poll.result as QueryResult | undefined;
+    result = poll.result;
     if (!result && state === 'RUNNING') await sleep(300);
   }
   if (!result) throw new Error(`Alert dump query did not complete (state: ${state}).`);
-  return (result.records ?? []).filter(Boolean) as Row[];
+  const queryResult = result as QueryResult;
+  return (queryResult.records ?? []).filter(Boolean);
 }
 
 export default async function (payload: AlertDumpPayload = {}) {
