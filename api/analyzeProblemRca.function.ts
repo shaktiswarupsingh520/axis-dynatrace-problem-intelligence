@@ -16,9 +16,10 @@ interface Evidence {
 
 const text = (value: unknown): string => {
   if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
   if (Array.isArray(value)) return value.map(text).filter(Boolean).join('; ');
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
+  const serialized = JSON.stringify(value);
+  return serialized ?? '';
 };
 const dqlEscape = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -27,17 +28,18 @@ async function dql(query: string, max = 200): Promise<Row[]> {
   const response = await queryExecutionClient.queryExecute({
     body: { query, requestTimeoutMilliseconds: 30000, maxResultRecords: max },
   });
-  let result = response.result as QueryResult | undefined;
+  let result = response.result;
   let state = response.state;
   const token = response.requestToken;
   for (let attempt = 0; !result && token && attempt < 30; attempt += 1) {
     const poll = await queryExecutionClient.queryPoll({ requestToken: token, requestTimeoutMilliseconds: 30000 });
     state = poll.state;
-    result = poll.result as QueryResult | undefined;
+    result = poll.result;
     if (!result && state === 'RUNNING') await sleep(250);
   }
   if (!result) throw new Error(`RCA evidence query did not complete (state: ${state}).`);
-  return (result.records ?? []).filter(Boolean) as Row[];
+  const queryResult = result as QueryResult;
+  return (queryResult.records ?? []).filter(Boolean);
 }
 
 const durationMinutes = (start: string, end: string) => {
@@ -101,7 +103,7 @@ async function askAssist(problemId: string, evidence: Evidence): Promise<{ text:
     },
   });
   if (response.status === 'FAILED') throw new Error('Dynatrace Assist RCA failed. Verify davis-copilot:conversations:execute and tenant availability.');
-  return { text: response.text?.trim() ?? '', status: response.status };
+  return { text: text(response.text).trim(), status: response.status };
 }
 
 export default async function (payload: AnalyzePayload) {
