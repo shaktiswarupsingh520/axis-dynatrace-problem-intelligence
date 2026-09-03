@@ -9,13 +9,13 @@ const escapeDql = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, 
 
 async function executeDql(query: string, max = 1000): Promise<Row[]> {
   const response = await queryExecutionClient.queryExecute({ body: { query, requestTimeoutMilliseconds: 30000, maxResultRecords: max } });
-  let result = response.result as QueryResult | undefined;
+  let result: QueryResult | undefined = response.result;
   let state = response.state;
   if (!result && response.requestToken) {
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const poll = await queryExecutionClient.queryPoll({ requestToken: response.requestToken, requestTimeoutMilliseconds: 30000 });
       state = poll.state;
-      result = poll.result as QueryResult | undefined;
+      result = poll.result;
       if (result || state !== 'RUNNING') break;
       await sleep(300);
     }
@@ -40,7 +40,7 @@ export default async function (payload: AlertDumpPayload = {}) {
   if (payload.managementZone && payload.managementZone !== 'ALL') {
     query += `\n| expand related_entity_names\n| lookup sourceField:related_entity_names, lookupField:entity.name,\n  [\n    fetch dt.entity.host\n    | expand managementZones\n    | filter managementZones == "${escapeDql(payload.managementZone)}"\n    | fields entity.name\n  ], fields:{zoneHostName=entity.name}\n| filter isNotNull(zoneHostName)\n| dedup display_id`;
   }
-  query += ` | fields display_id,event.name,event.status,event.severity,event.category,dt.davis.impact_level,event.start,event.end,affected_entity_names,affected_entity_ids,root_cause_entity_id,event.description,labels.alerting_profile,dt.davis.is_duplicate,maintenance.is_under_maintenance | sort event.start desc | limit ${limit}`;
+  query += `\n| fields display_id,event.name,event.status,event.severity,event.category,dt.davis.impact_level,event.start,event.end,affected_entity_names,affected_entity_ids,root_cause_entity_id,event.description,labels.alerting_profile,dt.davis.is_duplicate,maintenance.is_under_maintenance\n| sort event.start desc\n| limit ${limit}`;
   const rows = await executeDql(query, limit);
   return { rows, count: rows.length, query, generatedAt: new Date().toISOString() };
 }
