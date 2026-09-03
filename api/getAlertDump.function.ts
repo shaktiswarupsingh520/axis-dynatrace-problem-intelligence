@@ -1,7 +1,6 @@
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 type Row = Record<string, unknown>;
-interface QueryResult { records?: Array<Row | null>; }
 interface AlertDumpPayload {
   from?: string;
   to?: string;
@@ -36,8 +35,7 @@ async function executeDql(query: string, max: number): Promise<Row[]> {
     if (!result && state === 'RUNNING') await sleep(300);
   }
   if (!result) throw new Error(`Alert dump query did not complete (state: ${state}).`);
-  const queryResult = result as QueryResult;
-  return (queryResult.records ?? []).filter(Boolean);
+  return (result.records ?? []).filter(Boolean);
 }
 
 export default async function (payload: AlertDumpPayload = {}) {
