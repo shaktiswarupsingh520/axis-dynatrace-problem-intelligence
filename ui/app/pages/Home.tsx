@@ -23,19 +23,15 @@ const formatDuration = (start?: number, end?: number) => {
 
 const upper = (value?: string) => (value ?? '').toUpperCase();
 
-const getVoiceText = (problem: Problem) => {
-  const analysis = problem.problemAnalysis;
-  const description = analysis?.description || problem.title || 'No alert description available';
-  const cause = analysis?.probableCause || analysis?.rootCause || 'Root cause analysis is not available yet';
-  const remediation = analysis?.remediation || 'Review the Dynatrace evidence for recommended next steps';
-  return `Attention. New Dynatrace problem. ${problem.severityLevel ?? 'unknown severity'}. ${problem.displayId ?? problem.problemId ?? ''}. Alert description. ${description}. Probable root cause. ${cause}. Recommended action. ${remediation}.`;
-};
+// Voice buzz is intentionally short: title only. IDs, RCA and remediation stay on screen.
+const getVoiceText = (problem: Problem) => `Attention. New Dynatrace alert. ${problem.title || 'New problem alert'}.`;
 
 const speakProblem = (problem: Problem) => {
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(getVoiceText(problem));
-  utterance.rate = 0.92;
+  utterance.rate = 1;
+  utterance.pitch = 1;
   window.speechSynthesis.speak(utterance);
 };
 
@@ -117,11 +113,10 @@ export const Home = () => {
     { name: 'getProblemDetails', data: selectedProblem?.problemId ? { problemId: selectedProblem.problemId } : undefined },
     { autoFetch: Boolean(selectedProblem?.problemId), autoFetchOnUpdate: Boolean(selectedProblem?.problemId) },
   );
-
   const detail = detailQuery.data ?? selectedProblem;
 
   useEffect(() => {
-    if (!voiceEnabled || !detail?.problemId || !detail.problemAnalysis) return;
+    if (!voiceEnabled || !detail?.problemId) return;
     if (pendingVoiceProblemId.current !== detail.problemId) return;
     speakProblem(detail);
     pendingVoiceProblemId.current = null;
@@ -135,7 +130,7 @@ export const Home = () => {
   const enableVoice = () => {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance('Dynatrace voice buzz enabled. New alerts will include the description, probable root cause and recommended action.'));
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance('Dynatrace voice buzz enabled. New alert titles will be announced.'));
     setVoiceEnabled(true);
   };
 
