@@ -2,6 +2,7 @@ import { publicClient } from '@dynatrace-sdk/client-davis-copilot';
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 type Row = Record<string, unknown>;
+interface QueryResult { records?: Array<Row | null>; }
 interface AnalyzePayload { problemId: string; }
 interface Evidence {
   problem: Row;
@@ -37,7 +38,8 @@ async function dql(query: string, max = 200): Promise<Row[]> {
     if (!result && state === 'RUNNING') await sleep(250);
   }
   if (!result) throw new Error(`RCA evidence query did not complete (state: ${state}).`);
-  return (result.records ?? []).filter(Boolean);
+  const queryResult = result as QueryResult;
+  return (queryResult.records ?? []).filter(Boolean);
 }
 
 const durationMinutes = (start: string, end: string) => {
