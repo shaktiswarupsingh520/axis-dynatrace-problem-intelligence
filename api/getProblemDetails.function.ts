@@ -39,7 +39,7 @@ const executeDql = async (query: string): Promise<DqlRecord[]> => {
     });
 
     if (started.result?.records) {
-      return started.result.records as DqlRecord[];
+      return started.result.records;
     }
 
     if (!started.requestToken) {
@@ -52,7 +52,7 @@ const executeDql = async (query: string): Promise<DqlRecord[]> => {
       });
 
       if (polled.result?.records) {
-        return polled.result.records as DqlRecord[];
+        return polled.result.records;
       }
 
       if (polled.state === 'FAILED' || polled.state === 'CANCELLED' || polled.state === 'RESULT_GONE') {
