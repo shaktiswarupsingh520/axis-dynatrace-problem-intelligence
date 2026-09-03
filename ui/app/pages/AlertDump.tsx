@@ -6,7 +6,13 @@ import { useNavigate } from 'react-router-dom';
 
 type Row = Record<string, unknown>;
 interface Response { rows: Row[]; count: number; generatedAt: string; }
-const v=(x:unknown)=>Array.isArray(x)?x.join('; '):x==null?'':String(x);
+const v = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(v).filter(Boolean).join('; ');
+  const serialized = JSON.stringify(value);
+  return serialized ?? '';
+};
 const fields=['display_id','event.name','event.status','event.severity','event.category','dt.davis.impact_level','event.start','event.end','affected_entity_names','root_cause_entity_id','event.description'];
 const heads=['Problem ID','Title','Status','Severity','Category','Impact','Started','Ended','Affected Entities','Root Cause Entity','Description'];
 const makeCsv=(rows:Row[])=>{const esc=(x:unknown)=>`"${v(x).replace(/"/g,'""')}"`;return `\uFEFF${[heads.map(esc).join(','),...rows.map(r=>fields.map(f=>esc(r[f])).join(','))].join('\r\n')}`;};
