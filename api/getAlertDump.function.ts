@@ -5,12 +5,6 @@ interface AlertDumpPayload { from?: string; to?: string; status?: string; severi
 interface QueryResult { records?: Array<Row | null>; }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-const text = (value: unknown): string => {
-  if (value === null || value === undefined) return '';
-  if (Array.isArray(value)) return value.map(text).filter(Boolean).join('; ');
-  if (typeof value === 'object') return JSON.stringify(value) ?? '';
-  return String(value);
-};
 const escapeDql = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 async function executeDql(query: string, max = 1000): Promise<Row[]> {
@@ -27,15 +21,14 @@ async function executeDql(query: string, max = 1000): Promise<Row[]> {
     }
   }
   if (!result) throw new Error(`Alert dump DQL did not return a result (state: ${state}).`);
-  return (result.records ?? []).filter(Boolean) as Row[];
+  return (result.records ?? []).filter((record): record is Row => record !== null && typeof record === 'object' && !Array.isArray(record));
 }
 
 export default async function (payload: AlertDumpPayload = {}) {
   const from = payload.from ?? 'now-24h';
-  const to = payload.to ?? 'now';
+  const limit = Math.min(Math.max(payload.limit ?? 1000, 1), 1000);
   const rawRange = from.startsWith('now-') ? from.slice(4) : '24h';
   const range = ['1h', '6h', '24h', '7d', '30d'].includes(rawRange) ? rawRange : '24h';
-  const limit = Math.min(Math.max(payload.limit ?? 1000, 1), 1000);
   const filters = ['not(dt.davis.is_duplicate)'];
   if (payload.status && payload.status !== 'ALL') {
     const status = payload.status === 'ACTIVE' ? 'OPEN' : payload.status;
@@ -47,7 +40,7 @@ export default async function (payload: AlertDumpPayload = {}) {
   if (payload.managementZone && payload.managementZone !== 'ALL') {
     query += `\n| expand related_entity_names\n| lookup sourceField:related_entity_names, lookupField:entity.name,\n  [\n    fetch dt.entity.host\n    | expand managementZones\n    | filter managementZones == "${escapeDql(payload.managementZone)}"\n    | fields entity.name\n  ], fields:{zoneHostName=entity.name}\n| filter isNotNull(zoneHostName)\n| dedup display_id`;
   }
-  query += ` | sort event.start desc | limit ${limit}`;
+  query += ` | fields display_id,event.name,event.status,event.severity,event.category,dt.davis.impact_level,event.start,event.end,affected_entity_names,affected_entity_ids,root_cause_entity_id,event.description,labels.alerting_profile,dt.davis.is_duplicate,maintenance.is_under_maintenance | sort event.start desc | limit ${limit}`;
   const rows = await executeDql(query, limit);
   return { rows, count: rows.length, query, generatedAt: new Date().toISOString() };
 }
