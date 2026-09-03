@@ -3,5 +3,36 @@ import { useAppFunction } from '@dynatrace-sdk/react-hooks';
 import { Flex } from '@dynatrace/strato-components/layouts';
 import { Heading, Paragraph } from '@dynatrace/strato-components/typography';
 import { useNavigate } from 'react-router-dom';
-interface Result{problemId:string;nativeRootCauseEntity:string|null;definitiveRootCause:boolean;analysis:string;generatedAt:string;evidenceSummary:Record<string,number>}
-export const RcaWorkbench=()=>{const nav=useNavigate();const[problemId,setProblemId]=useState('');const[runId,setRunId]=useState('');const{data,isLoading,error,refetch}=useAppFunction<Result>({name:'analyzeProblemRca',data:{problemId:runId}},{autoFetch:false,autoFetchOnUpdate:false});const run=()=>{if(!problemId.trim())return;setRunId(problemId.trim());window.setTimeout(()=>void refetch(),0);};return <Flex flexDirection="column" padding={24} gap={16}><style>{`.rcatool{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:14px;border:1px solid #dce3ea;border-radius:10px;background:#f7f9fb}.rcatool label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700}.rcatool input,.rcatool button{height:38px;border:1px solid #c8d2dd;border-radius:7px;padding:0 12px}.rcatool input{width:300px}.rcatool button{font-weight:700;cursor:pointer}.rcaprimary{background:#174a7e!important;color:#fff;border-color:#174a7e!important}.rcabadge{padding:7px 10px;border-radius:7px;background:#eef5fb;font-size:12px}.rcabox{border:1px solid #dce3ea;border-radius:10px;padding:18px;background:#fff}.rcatext{white-space:pre-wrap;line-height:1.6;font-size:13px}.rcagrid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.rcacard{border:1px solid #e1e7ed;border-radius:8px;padding:10px}.rcacard small{display:block;color:#68798c}.rcacard strong{display:block;margin-top:4px}.rcaerror{padding:12px;border:1px solid #d88;border-radius:8px}`}</style><Heading>RCA Analysis with Dynatrace Assist</Heading><Paragraph>Capacity Planner RCA Workbench cloned into Problem Intelligence. It retrieves Davis/Grail evidence first, then asks Dynatrace Assist for an evidence-first RCA. If Davis did not return a definitive root-cause entity, the UI says so explicitly.</Paragraph><div className="rcatool"><label>Dynatrace Problem ID<input value={problemId} onChange={e=>setProblemId(e.target.value)} placeholder="P-260919978" /></label><button className="rcaprimary" type="button" onClick={run} disabled={isLoading||!problemId.trim()}>{isLoading?'Analysing Davis evidence…':'Generate full RCA'}</button><button type="button" onClick={()=>nav('/')}>Back to Problems</button></div>{error&&<div className="rcaerror">RCA failed: {error.message}</div>}{data&&<><div className="rcagrid"><div className="rcacard"><small>Problem</small><strong>{data.problemId}</strong></div><div className="rcacard"><small>Definitive root cause</small><strong>{data.definitiveRootCause?'Yes':'No'}</strong></div><div className="rcacard"><small>Root-cause entity</small><strong>{data.nativeRootCauseEntity||'Not returned by Davis'}</strong></div>{Object.entries(data.evidenceSummary).map(([k,n])=><div className="rcacard" key={k}><small>{k}</small><strong>{n}</strong></div>)}</div><div className="rcabox"><div className="rcabadge">🧠 Dynatrace Assist · evidence-backed RCA · {new Date(data.generatedAt).toLocaleString()}</div><div className="rcatext">{data.analysis}</div></div></>}</Flex>;};
+
+interface Result { problemId: string; nativeRootCauseEntity: string | null; definitiveRootCause: boolean; analysis: string; generatedAt: string; evidenceSummary: Record<string, number>; }
+
+export const RcaWorkbench = () => {
+  const nav = useNavigate();
+  const [problemId, setProblemId] = useState('');
+  const [runId, setRunId] = useState('');
+  const { data, isLoading, error } = useAppFunction<Result>(
+    { name: 'analyzeProblemRca', data: { problemId: runId } },
+    { autoFetch: Boolean(runId), autoFetchOnUpdate: true },
+  );
+  const run = () => { const id = problemId.trim(); if (id) setRunId(id); };
+  return <Flex flexDirection="column" padding={24} gap={16}>
+    <style>{`.rcatool{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:14px;border:1px solid #dce3ea;border-radius:10px;background:#f7f9fb}.rcatool label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700}.rcatool input,.rcatool button{height:38px;border:1px solid #c8d2dd;border-radius:7px;padding:0 12px}.rcatool input{width:300px}.rcatool button{font-weight:700;cursor:pointer}.rcaprimary{background:#174a7e!important;color:#fff;border-color:#174a7e!important}.rcabadge{padding:7px 10px;border-radius:7px;background:#eef5fb;font-size:12px}.rcabox{border:1px solid #dce3ea;border-radius:10px;padding:18px;background:#fff}.rcatext{white-space:pre-wrap;line-height:1.6;font-size:13px}.rcagrid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.rcacard{border:1px solid #e1e7ed;border-radius:8px;padding:10px}.rcacard small{display:block;color:#68798c}.rcacard strong{display:block;margin-top:4px;word-break:break-word}.rcaerror{padding:12px;border:1px solid #d88;border-radius:8px}`}</style>
+    <Heading>RCA Analysis with Dynatrace Assist</Heading>
+    <Paragraph>Evidence-first RCA using the native Davis problem, root-cause evidence, incident events, logs, deployments and recurrence history.</Paragraph>
+    <div className="rcatool">
+      <label>Dynatrace Problem ID<input value={problemId} onChange={e => setProblemId(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') run(); }} placeholder="P-260919978" /></label>
+      <button className="rcaprimary" type="button" onClick={run} disabled={isLoading || !problemId.trim()}>{isLoading ? 'Analysing Davis evidence…' : 'Generate full RCA'}</button>
+      <button type="button" onClick={() => nav('/')}>Back to Problems</button>
+    </div>
+    {error && <div className="rcaerror">RCA failed: {error.message}</div>}
+    {data && <>
+      <div className="rcagrid">
+        <div className="rcacard"><small>Problem</small><strong>{data.problemId}</strong></div>
+        <div className="rcacard"><small>Definitive root cause</small><strong>{data.definitiveRootCause ? 'Yes' : 'No — probable cause analysis'}</strong></div>
+        <div className="rcacard"><small>Root-cause entity</small><strong>{data.nativeRootCauseEntity || 'No native entity; evidence chain used'}</strong></div>
+        {Object.entries(data.evidenceSummary).map(([k, n]) => <div className="rcacard" key={k}><small>{k}</small><strong>{n}</strong></div>)}
+      </div>
+      <div className="rcabox"><div className="rcabadge">🧠 Dynatrace Assist · evidence-backed RCA · {new Date(data.generatedAt).toLocaleString()}</div><div className="rcatext">{data.analysis}</div></div>
+    </>}
+  </Flex>;
+};
