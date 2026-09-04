@@ -19,7 +19,7 @@ async function executeDql(query: string, max = 1000): Promise<Row[]> {
       await sleep(300);
     }
   }
-  if (!result) throw new Error(`Problem query did not return a result (state: ${state}).`);
+  if (!result) throw new Error(`DQL query failed or did not complete (state: ${state ?? 'unknown'}).`);
   return (result.records ?? []).filter((record): record is Row => record !== null && typeof record === 'object' && !Array.isArray(record));
 }
 
@@ -43,9 +43,23 @@ function buildProblemQuery(range: string, status: string, severity: string, zone
 | dedup display_id`;
   }
   return `${query}
-| fields display_id,event.name,event.status,event.severity,event.category,dt.davis.impact_level,event.start,event.end,affected_entity_names,affected_entity_ids,root_cause_entity_id,event.description,labels.alerting_profile,dt.davis.is_duplicate,maintenance.is_under_maintenance
 | sort event.start desc
 | limit 1000`;
+}
+
+async function loadManagementZones(): Promise<string[]> {
+  try {
+    const rows = await executeDql(`fetch dt.entity.host
+| expand managementZones
+| filter isNotNull(managementZones)
+| fields managementZones
+| dedup managementZones
+| sort managementZones asc
+| limit 500`, 500);
+    return rows.map((row) => row.managementZones).filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  } catch {
+    return [];
+  }
 }
 
 export default async function (payload: AlertDumpPayload = {}) {
@@ -56,6 +70,6 @@ export default async function (payload: AlertDumpPayload = {}) {
   const zone = payload.managementZone ?? 'ALL';
   const limit = Math.min(Math.max(payload.limit ?? 1000, 1), 1000);
   const query = buildProblemQuery(range, status, severity, zone).replace('limit 1000', `limit ${limit}`);
-  const rows = await executeDql(query, limit);
-  return { rows, count: rows.length, query, generatedAt: new Date().toISOString() };
+  const [rows, managementZones] = await Promise.all([executeDql(query, limit), loadManagementZones()]);
+  return { rows, count: rows.length, managementZones, query, generatedAt: new Date().toISOString() };
 }
