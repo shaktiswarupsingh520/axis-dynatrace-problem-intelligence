@@ -4,13 +4,6 @@ type Row = Record<string, unknown>;
 interface AlertDumpPayload { from?: string; status?: string; severity?: string; managementZone?: string; limit?: number; }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-const valueText = (value: unknown): string => {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
-  if (Array.isArray(value)) return value.map(valueText).filter(Boolean).join('; ');
-  return JSON.stringify(value) ?? '';
-};
 const escapeDql = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 async function executeDql(query: string, max = 1000): Promise<Row[]> {

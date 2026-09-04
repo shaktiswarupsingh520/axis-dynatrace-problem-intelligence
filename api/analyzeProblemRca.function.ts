@@ -9,7 +9,8 @@ const text = (v: unknown): string => {
   if (typeof v === 'string') return v;
   if (Array.isArray(v)) return v.map(text).filter(Boolean).join('; ');
   if (typeof v === 'object') return JSON.stringify(v) ?? '';
-  return String(v);
+  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
+  return '';
 };
 const q = (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
