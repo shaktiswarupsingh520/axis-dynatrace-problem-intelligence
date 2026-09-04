@@ -4,7 +4,13 @@ type Row = Record<string, unknown>;
 interface AlertDumpPayload { from?: string; status?: string; severity?: string; managementZone?: string; limit?: number; }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-const text = (value: unknown): string => Array.isArray(value) ? value.map(text).filter(Boolean).join('; ') : value == null ? '' : typeof value === 'object' ? JSON.stringify(value) ?? '' : String(value);
+const valueText = (value: unknown): string => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+  if (Array.isArray(value)) return value.map(valueText).filter(Boolean).join('; ');
+  return JSON.stringify(value) ?? '';
+};
 const escapeDql = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
 async function executeDql(query: string, max = 1000): Promise<Row[]> {
@@ -27,7 +33,7 @@ async function executeDql(query: string, max = 1000): Promise<Row[]> {
 function buildProblemQuery(range: string, status: string, severity: string, zone: string) {
   const safeRange = ['1h', '6h', '24h', '7d', '30d'].includes(range) ? range : '24h';
   const filters = ['not(dt.davis.is_duplicate)'];
-  if (status !== 'ALL') filters.push(`event.status == "${escapeDql(status)}"`);
+  if (status !== 'ALL') filters.push(`event.status == "${escapeDql(status === 'ACTIVE' ? 'OPEN' : status)}"`);
   if (severity !== 'ALL') filters.push(`event.severity == ${severity}`);
   let query = `fetch dt.davis.problems, from:now()-${safeRange}, to:now() | filter ${filters.join(' and ')}`;
   if (zone !== 'ALL' && zone !== 'All Management Zones') {
