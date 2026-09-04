@@ -28,13 +28,6 @@ async function dql(query: string, max = 200): Promise<Row[]> {
   return (result.records ?? []).filter((record): record is Row => record !== null && typeof record === 'object' && !Array.isArray(record));
 }
 
-const duration = (a: string, b: string) => {
-  const x = new Date(a).getTime();
-  const y = b ? new Date(b).getTime() : Date.now();
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  return Math.max(0, y - x) / 60000;
-};
-
 async function loadEvidence(id: string): Promise<Evidence> {
   const pid = q(id);
   const rows = await dql(`fetch dt.davis.problems, from:now()-365d, to:now()\n| filter not(dt.davis.is_duplicate) and display_id == "${pid}"\n| limit 1`, 5);
@@ -90,8 +83,7 @@ function fallbackRca(id: string, e: Evidence, assistError?: string): string {
 }
 
 async function ask(id: string, e: Evidence): Promise<{ analysis: string; assistError?: string }> {
-  const p = e.problem;
-  const evidence = JSON.stringify({ problem: p, timeline: e.snapshots.slice(0, 50), correlatedEvents: e.events.slice(0, 70), incidentLogs: e.logs.slice(0, 80), pastOccurrences: e.history.slice(0, 30) }).slice(0, 26000);
+  const evidence = JSON.stringify({ problem: e.problem, timeline: e.snapshots.slice(0, 50), correlatedEvents: e.events.slice(0, 70), incidentLogs: e.logs.slice(0, 80), pastOccurrences: e.history.slice(0, 30) }).slice(0, 26000);
   const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze ONLY the retrieved evidence below. Do not claim lack of access and do not ask for telemetry already included. Separate observed facts from inference. Never invent metrics, timestamps, deployments, root causes, affected users, recurrence or remediation results. If unproven, say "Not proven by available evidence". Recommendations are proposals only. Return exactly these 12 sections: 1. Executive Summary 2. Incident Overview 3. Root Cause Assessment 4. Technical Root-Cause Chain 5. Incident Timeline 6. Past Occurrences & Recurrence Pattern 7. Impact Assessment 8. Immediate Remediation Plan 9. Permanent / Preventive Actions 10. Monitoring & Alerting Recommendations 11. Validation Checklist 12. RCA Confidence & Evidence Gaps.\n\nRETRIEVED DYNATRACE EVIDENCE:\n${evidence}`;
   try {
     const response = await publicClient.recommenderConversation({ body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: evidence }, { type: 'instruction', value: 'Analyze the supplied evidence directly. Do not produce a generic access limitation response.' }], annotations: { origin: 'Axis Davis Capacity Planner RCA', problemId: id } } });
@@ -110,18 +102,5 @@ export default async function (payload: AnalyzePayload) {
   const result = await ask(payload.problemId, evidence);
   const p = evidence.problem;
   const nativeRootCauseEntity = text(p['root_cause.smartscape_entity']) || text(p.root_cause_entity_id) || null;
-  return {
-    problemId: payload.problemId,
-    analysis: result.analysis,
-    generatedAt: new Date().toISOString(),
-    nativeRootCauseEntity,
-    definitiveRootCause: Boolean(nativeRootCauseEntity),
-    assistFallback: Boolean(result.assistError),
-    evidenceSummary: {
-      correlatedEvents: evidence.events.length,
-      incidentLogs: evidence.logs.length,
-      historicalOccurrences: evidence.history.length,
-      timelineSnapshots: evidence.snapshots.length
-    }
-  };
+  return { problemId: payload.problemId, analysis: result.analysis, generatedAt: new Date().toISOString(), nativeRootCauseEntity, definitiveRootCause: Boolean(nativeRootCauseEntity), assistFallback: Boolean(result.assistError), evidenceSummary: { correlatedEvents: evidence.events.length, incidentLogs: evidence.logs.length, historicalOccurrences: evidence.history.length, timelineSnapshots: evidence.snapshots.length } };
 }
