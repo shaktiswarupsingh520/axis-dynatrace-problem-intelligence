@@ -54,7 +54,7 @@ async function loadEvidence(id: string): Promise<Evidence> {
   const start = text(problem['event.start']);
   const end = text(problem['event.end']) || new Date().toISOString();
   const events = eventList ? await dql(`fetch dt.davis.events, from:now()-365d, to:now()\n| filter in(event.id,array(${eventList}))\n| fields event.id,event.name,event.type,event.status,event.severity,event.category,event.start,event.end,event.description,dt.source_entity,dt.smartscape_source.id,dt.smartscape_source.type,dt.davis.is_rootcause_relevant\n| sort event.start asc\n| limit 80`, 80).catch(() => []) : [];
-  const logs = entityList && start ? await dql(`fetch logs, from:now()-365d, to:now()\n| filter timestamp >= toTimestamp("${q(start)}") - 15m and timestamp <= toTimestamp("${q(end)}") + 15m\n| filter in(dt.source_entity,array(${entityList}))\n| fields timestamp,dt.source_entity,status,severity,content,message\n| sort timestamp asc\n| limit 25`, 25).catch(() => []) : [];
+  const logs = entityList && start ? await dql(`fetch logs, from:now()-365d, to:now()\n| filter timestamp >= toTimestamp("${q(start)}") - 15m and timestamp <= toTimestamp("${q(end)}") + 15m\n| filter in(dt.source_entity,array(${entityList}))\n| sort timestamp asc\n| limit 25`, 25).catch(() => []) : [];
   const eventName = q(text(problem['event.name']));
   const history = await dql(`fetch dt.davis.problems, from:now()-365d, to:now()\n| filter not(dt.davis.is_duplicate) and event.name == "${eventName}"\n| fields display_id,event.name,event.status,event.severity,event.start,event.end,event.category,root_cause.smartscape_entity,dt.davis.affected_users_count\n| sort event.start desc\n| limit 100`, 100).catch(() => []);
   let occurrenceCount = history.length;
@@ -108,42 +108,14 @@ function fallbackRca(id: string, evidence: Evidence): string {
 
 async function ask(id: string, evidence: Evidence): Promise<{ analysis: string; assistFallback: boolean }> {
   const problem = evidence.problem;
-  const compactEvidence = JSON.stringify({
-    problem: {
-      id,
-      title: text(problem['event.name']),
-      status: text(problem['event.status']),
-      severity: text(problem['event.severity']),
-      category: text(problem['event.category']),
-      start: text(problem['event.start']),
-      end: text(problem['event.end']),
-      description: text(problem['event.description']),
-      rootCause: text(problem['root_cause.smartscape_entity']) || text(problem.root_cause_entity_id),
-      impact: text(problem['dt.davis.impact_level']),
-      affectedUsers: text(problem['dt.davis.affected_users_count']),
-      affectedEntities: text(problem.affected_entity_names),
-      occurrenceCount: evidence.occurrenceCount,
-    },
-    timeline: evidence.snapshots.slice(0, 20),
-    correlatedEvents: evidence.events.slice(0, 25),
-    incidentLogs: evidence.logs.slice(0, 12),
-    pastOccurrences: evidence.history.slice(0, 12),
-  }).slice(0, 6800);
-  const prompt = `Create a customer-ready incident RCA for Davis Problem ${id}. Use ONLY the supplied evidence. Never invent facts. Clearly distinguish observed facts from inference. If a cause is not proven, say "Not proven by available evidence". Return these sections with useful technical detail: Executive Summary; Incident Overview; Root Cause Assessment; Technical Root-Cause Chain; Incident Timeline; Past Occurrences & Recurrence Pattern; Impact Assessment; Immediate Remediation Plan; Permanent / Preventive Actions; Monitoring & Alerting Recommendations; Validation Checklist; RCA Confidence & Evidence Gaps.\n\nEVIDENCE:\n${compactEvidence}`;
+  const compactEvidence = JSON.stringify({ problem: { id, title: text(problem['event.name']), status: text(problem['event.status']), severity: text(problem['event.severity']), category: text(problem['event.category']), start: text(problem['event.start']), end: text(problem['event.end']), description: text(problem['event.description']), rootCause: text(problem['root_cause.smartscape_entity']) || text(problem.root_cause_entity_id), impact: text(problem['dt.davis.impact_level']), affectedUsers: text(problem['dt.davis.affected_users_count']), affectedEntities: text(problem.affected_entity_names), occurrenceCount: evidence.occurrenceCount }, timeline: evidence.snapshots.slice(0, 20), correlatedEvents: evidence.events.slice(0, 25), incidentLogs: evidence.logs.slice(0, 12), pastOccurrences: evidence.history.slice(0, 12) }).slice(0, 6800);
+  const prompt = `Create a customer-ready incident RCA for Davis Problem ${id}. Use ONLY the supplied evidence. Never invent facts. Clearly distinguish observed facts from inference. If a cause is not proven, say "Not proven by available evidence". Return these sections: Executive Summary; Incident Overview; Root Cause Assessment; Technical Root-Cause Chain; Incident Timeline; Past Occurrences & Recurrence Pattern; Impact Assessment; Immediate Remediation Plan; Permanent / Preventive Actions; Monitoring & Alerting Recommendations; Validation Checklist; RCA Confidence & Evidence Gaps.\n\nEVIDENCE:\n${compactEvidence}`;
   try {
-    const response = await publicClient.recommenderConversation({ body: {
-      text: prompt,
-      context: [
-        { type: 'document-retrieval', value: 'disabled' },
-        { type: 'supplementary', value: compactEvidence },
-        { type: 'instruction', value: 'Analyze the supplied Dynatrace evidence directly. Do not respond with an access limitation.' },
-      ],
-      annotations: { origin: 'Axis Davis Capacity Planner RCA', problemId: id },
-    } });
+    const response = await publicClient.recommenderConversation({ body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: compactEvidence }, { type: 'instruction', value: 'Analyze the supplied Dynatrace evidence directly. Do not respond with an access limitation.' }], annotations: { origin: 'Axis Davis Capacity Planner RCA', problemId: id } } });
     const answer = extractAssistText(response);
     if (answer) return { analysis: answer, assistFallback: false };
   } catch {
-    // Use grounded fallback when Assist is unavailable.
+    // Fall back to deterministic evidence-backed RCA.
   }
   return { analysis: fallbackRca(id, evidence), assistFallback: true };
 }
@@ -152,7 +124,8 @@ export default async function (payload: AnalyzePayload) {
   if (!payload?.problemId) throw new Error('problemId is required');
   const evidence = await loadEvidence(payload.problemId);
   const result = await ask(payload.problemId, evidence);
-  const nativeRootCauseEntity = text(evidence.problem['root_cause.smartscape_entity']) || text(evidence.problem.root_cause_entity_id) || null;
+  const problem = evidence.problem;
+  const nativeRootCauseEntity = text(problem['root_cause.smartscape_entity']) || text(problem.root_cause_entity_id) || null;
   return {
     problemId: payload.problemId,
     analysis: result.analysis,
@@ -160,12 +133,7 @@ export default async function (payload: AnalyzePayload) {
     nativeRootCauseEntity,
     definitiveRootCause: Boolean(nativeRootCauseEntity),
     assistFallback: result.assistFallback,
-    evidenceSummary: {
-      correlatedEvents: evidence.events.length,
-      incidentLogs: evidence.logs.length,
-      historicalOccurrences: evidence.occurrenceCount,
-      timelineSnapshots: evidence.snapshots.length,
-    },
+    evidenceSummary: { correlatedEvents: evidence.events.length, incidentLogs: evidence.logs.length, historicalOccurrences: evidence.occurrenceCount, timelineSnapshots: evidence.snapshots.length },
     occurrenceCount: evidence.occurrenceCount,
     occurrences: evidence.occurrences,
   };
