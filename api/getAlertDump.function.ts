@@ -1,75 +1,83 @@
-import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 
-type Row = Record<string, unknown>;
-interface AlertDumpPayload { from?: string; status?: string; severity?: string; managementZone?: string; limit?: number; }
+type Problem = Record<string, unknown>;
+interface Payload { from?: string; status?: string; severity?: string; managementZoneId?: string; limit?: number; }
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
-const escapeDql = (value: string) => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-
-async function executeDql(query: string, max = 1000): Promise<Row[]> {
-  const response = await queryExecutionClient.queryExecute({ body: { query, requestTimeoutMilliseconds: 30000, maxResultRecords: max } });
-  let result = response.result;
-  let state = response.state;
-  if (!result && response.requestToken) {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const poll = await queryExecutionClient.queryPoll({ requestToken: response.requestToken, requestTimeoutMilliseconds: 30000 });
-      state = poll.state;
-      result = poll.result;
-      if (result || state !== 'RUNNING') break;
-      await sleep(300);
-    }
+const text = (value: unknown): string => {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.map(text).filter(Boolean).join('; ');
+  if (typeof value === 'object') return JSON.stringify(value) ?? '';
+  return String(value);
+};
+const duration = (start: unknown, end: unknown) => {
+  const a = new Date(text(start)).getTime();
+  const b = end ? new Date(text(end)).getTime() : Date.now();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return '—';
+  const mins = Math.max(0, b - a) / 60000;
+  return mins < 60 ? `${mins.toFixed(1)} min` : mins < 1440 ? `${(mins / 60).toFixed(1)} h` : `${(mins / 1440).toFixed(1)} d`;
+};
+const zoneName = (zone: unknown) => {
+  if (zone && typeof zone === 'object' && !Array.isArray(zone)) {
+    const z = zone as Record<string, unknown>;
+    return text(z.name) || text(z.id);
   }
-  if (!result) throw new Error(`DQL query failed or did not complete (state: ${state ?? 'unknown'}).`);
-  return (result.records ?? []).filter((record): record is Row => record !== null && typeof record === 'object' && !Array.isArray(record));
+  return text(zone);
+};
+
+async function fetchProblems(from: string, managementZoneId?: string) {
+  const selectors: string[] = [];
+  if (managementZoneId) selectors.push(`managementZoneIds("${managementZoneId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`);
+  const selector = selectors.length ? selectors.join(',') : undefined;
+  const rows: Problem[] = [];
+  let nextPageKey: string | undefined;
+  for (let page = 0; page < 3; page += 1) {
+    const response = await problemsClient.getProblems({ from, to: 'now', problemSelector: selector, pageSize: 500, sort: '-startTime', ...(nextPageKey ? { nextPageKey } : {}) });
+    rows.push(...(response.problems as unknown as Problem[]));
+    nextPageKey = response.nextPageKey;
+    if (!nextPageKey || rows.length >= 1000) break;
+  }
+  return rows.slice(0, 1000);
 }
 
-function buildProblemQuery(range: string, status: string, severity: string, zone: string) {
-  const safeRange = ['1h', '6h', '24h', '7d', '30d'].includes(range) ? range : '24h';
-  const filters = ['not(dt.davis.is_duplicate)'];
-  if (status !== 'ALL') filters.push(`event.status == "${escapeDql(status === 'ACTIVE' ? 'OPEN' : status)}"`);
-  if (severity !== 'ALL') filters.push(`event.severity == ${severity}`);
-  let query = `fetch dt.davis.problems, from:now()-${safeRange}, to:now() | filter ${filters.join(' and ')}`;
-  if (zone !== 'ALL' && zone !== 'All Management Zones') {
-    query += `
-| expand related_entity_names
-| lookup sourceField:related_entity_names, lookupField:entity.name,
-  [
-    fetch dt.entity.host
-    | expand managementZones
-    | filter managementZones == "${escapeDql(zone)}"
-    | fields entity.name
-  ], fields:{zoneHostName=entity.name}
-| filter isNotNull(zoneHostName)
-| dedup display_id`;
-  }
-  return `${query}
-| sort event.start desc
-| limit 1000`;
+function transform(problem: Problem) {
+  const zones = Array.isArray(problem.managementZones) ? problem.managementZones.map(zoneName).filter(Boolean) : [];
+  const root = problem.rootCauseEntity && typeof problem.rootCauseEntity === 'object' ? problem.rootCauseEntity as Record<string, unknown> : undefined;
+  const entities = Array.isArray(problem.affectedEntities) ? problem.affectedEntities.map(entity => entity && typeof entity === 'object' ? text((entity as Record<string, unknown>).name) : text(entity)).filter(Boolean) : [];
+  return {
+    display_id: problem.displayId ?? problem.problemId,
+    'event.name': problem.title,
+    'event.status': problem.status,
+    'event.severity': problem.severityLevel,
+    'event.category': problem.impactLevel,
+    'dt.davis.impact_level': problem.impactLevel,
+    'event.start': problem.startTime ? new Date(Number(problem.startTime)).toISOString() : '',
+    'event.end': problem.endTime ? new Date(Number(problem.endTime)).toISOString() : '',
+    'problem.duration': duration(problem.startTime, problem.endTime),
+    affected_entity_names: entities.join('; '),
+    root_cause_entity_id: text(root?.name) || text(root?.entityId),
+    'event.description': problem.title ?? '',
+    'labels.alerting_profile': '',
+    'dt.davis.is_duplicate': false,
+    'maintenance.is_under_maintenance': false,
+    managementZones: zones,
+  } as Problem;
 }
 
-async function loadManagementZones(): Promise<string[]> {
-  try {
-    const rows = await executeDql(`fetch dt.entity.host
-| expand managementZones
-| filter isNotNull(managementZones)
-| fields managementZones
-| dedup managementZones
-| sort managementZones asc
-| limit 500`, 500);
-    return rows.map((row) => row.managementZones).filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
-  } catch {
-    return [];
-  }
-}
-
-export default async function (payload: AlertDumpPayload = {}) {
-  const from = payload.from ?? 'now-24h';
-  const range = from.startsWith('now-') && ['1h', '6h', '24h', '7d', '30d'].includes(from.slice(4)) ? from.slice(4) : '24h';
+export default async function (payload: Payload = {}) {
+  const allowedRanges = ['1h', '6h', '24h', '7d', '30d'];
+  const from = allowedRanges.includes(payload.from?.replace('now-', '') ?? '') ? payload.from as string : 'now-24h';
   const status = payload.status ?? 'ALL';
   const severity = payload.severity ?? 'ALL';
-  const zone = payload.managementZone ?? 'ALL';
+  const managementZoneId = payload.managementZoneId && payload.managementZoneId !== 'ALL' ? payload.managementZoneId : undefined;
   const limit = Math.min(Math.max(payload.limit ?? 1000, 1), 1000);
-  const query = buildProblemQuery(range, status, severity, zone).replace('limit 1000', `limit ${limit}`);
-  const [rows, managementZones] = await Promise.all([executeDql(query, limit), loadManagementZones()]);
-  return { rows, count: rows.length, managementZones, query, generatedAt: new Date().toISOString() };
+  const raw = await fetchProblems(from, managementZoneId);
+  const allZones = [...new Set(raw.flatMap(problem => Array.isArray(problem.managementZones) ? problem.managementZones.map(zoneName).filter(Boolean) : []))].sort((a, b) => a.localeCompare(b));
+  const filtered = raw.filter(problem => {
+    const normalizedStatus = text(problem.status).toUpperCase();
+    const normalizedSeverity = text(problem.severityLevel).toUpperCase();
+    const statusOk = status === 'ALL' || (status === 'ACTIVE' ? normalizedStatus === 'OPEN' : normalizedStatus === 'CLOSED');
+    const severityOk = severity === 'ALL' || normalizedSeverity === severity.toUpperCase();
+    return statusOk && severityOk;
+  }).map(transform).slice(0, limit);
+  return { rows: filtered, count: filtered.length, managementZones: allZones, generatedAt: new Date().toISOString(), source: 'Dynatrace Problems API' };
 }
