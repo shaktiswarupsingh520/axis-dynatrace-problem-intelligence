@@ -16,6 +16,22 @@ const v = (value: unknown): string => {
 const fields=['display_id','event.name','event.status','event.severity','event.category','dt.davis.impact_level','event.start','event.end','affected_entity_names','root_cause_entity_id','event.description'];
 const heads=['Problem ID','Title','Status','Severity','Category','Impact','Started','Ended','Affected Entities','Root Cause Entity','Description'];
 const makeCsv=(rows:Row[])=>{const esc=(x:unknown)=>`"${v(x).replace(/"/g,'""')}"`;return `\uFEFF${[heads.map(esc).join(','),...rows.map(r=>fields.map(f=>esc(r[f])).join(','))].join('\r\n')}`;};
+const styles = [
+  '.adbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:14px;border:1px solid #dce3ea;border-radius:10px;background:#f7f9fb}',
+  '.adbar label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700}',
+  '.adbar select,.adbar button{height:36px;border:1px solid #c8d2dd;border-radius:7px;padding:0 10px;background:#fff}',
+  '.adbar button{font-weight:700;cursor:pointer}',
+  '.adprimary{background:#174a7e!important;color:#fff;border-color:#174a7e!important}',
+  '.admeta{display:flex;justify-content:space-between;font-size:12px;color:#65758a}',
+  '.adwrap{overflow:auto;border:1px solid #dce3ea;border-radius:10px;max-height:calc(100vh - 300px)}',
+  '.adtable{width:100%;min-width:1500px;border-collapse:collapse;font-size:12px}',
+  '.adtable th,.adtable td{padding:9px 11px;border-bottom:1px solid #e7ebef;text-align:left;vertical-align:top}',
+  '.adtable th{position:sticky;top:0;background:#edf3f8;z-index:1;white-space:nowrap}',
+  '.adpager{display:flex;align-items:center;justify-content:space-between;padding:10px 0}',
+  '.adpager button{height:32px;border:1px solid #c8d2dd;border-radius:7px;background:#fff;padding:0 12px;font-weight:700}',
+  '.adpager button:disabled{opacity:.45}',
+  '.aderror{padding:12px;border:1px solid #e5aaa5;background:#fff5f4;border-radius:8px;color:#9b241b}',
+].join('');
 
 export const AlertDump=()=>{
   const nav=useNavigate();
@@ -27,14 +43,14 @@ export const AlertDump=()=>{
   const pageSize=50;
   const req={from:`now-${range}`,status,severity,managementZone:zone,limit:1000};
   const{data,isLoading,error,refetch}=useAppFunction<Response>({name:'getAlertDump',data:req},{autoFetch:true,autoFetchOnUpdate:true});
-  const rows=data?.rows??[];
-  const zones=data?.managementZones??[];
+  const rows=useMemo(()=>data?.rows ?? [],[data?.rows]);
+  const zones=useMemo(()=>data?.managementZones ?? [],[data?.managementZones]);
   const pageCount=Math.max(1,Math.ceil(rows.length/pageSize));
   const visible=useMemo(()=>rows.slice((page-1)*pageSize,page*pageSize),[rows,page]);
   const change=(setter:React.Dispatch<React.SetStateAction<string>>,value:string)=>{setter(value);setPage(1);};
   const download=()=>{const url=URL.createObjectURL(new Blob([makeCsv(rows)],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`dynatrace-problem-alert-dump-${new Date().toISOString().slice(0,10)}.csv`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
   return <Flex flexDirection="column" padding={24} gap={16}>
-    <style>{`.adbar{display:flex;gap:10px;align-items:end;flex-wrap:wrap;padding:14px;border:1px solid #dce3ea;border-radius:10px;background:#f7f9fb}.adbar label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:700}.adbar select,.adbar button{height:36px;border:1px solid #c8d2dd;border-radius:7px;padding:0 10px;background:#fff}.adbar button{font-weight:700;cursor:pointer}.adprimary{background:#174a7e!important;color:#fff;border-color:#174a7e!important}.admeta{display:flex;justify-content:space-between;font-size:12px;color:#65758a}.adwrap{overflow:auto;border:1px solid #dce3ea;border-radius:10px;max-height:calc(100vh - 300px)}.adtable{width:100%;min-width:1500px;border-collapse:collapse;font-size:12px}.adtable th,.adtable td{padding:9px 11px;border-bottom:1px solid #e7ebef;text-align:left;vertical-align:top}.adtable th{position:sticky;top:0;background:#edf3f8;z-index:1;white-space:nowrap}.adpager{display:flex;align-items:center;justify-content:space-between;padding:10px 0}.adpager button{height:32px;border:1px solid #c8d2dd;border-radius:7px;background:#fff;padding:0 12px;font-weight:700}.adpager button:disabled{opacity:.45}.aderror{padding:12px;border:1px solid #e5aaa5;background:#fff5f4;border-radius:8px;color:#9b241b}`}</style>
+    <style>{styles}</style>
     <Heading>Dynatrace Alert Dump</Heading>
     <Paragraph>Live Davis problems with Management Zone filtering, status/severity filtering, investigation details and CSV export.</Paragraph>
     <div className="adbar">
