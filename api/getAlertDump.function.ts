@@ -44,6 +44,11 @@ export default async function (payload: Payload = {}) {
   const zoneMap = collectZones(zoneRows);
   const severitySet = new Set<string>();
   raw.forEach(problem => { const sev = text(problem.severityLevel); if (sev) severitySet.add(sev); });
-  const rows = raw.filter(problem => { const s = text(problem.status).toUpperCase(); const sev = text(problem.severityLevel).toUpperCase(); return (status === 'ALL' || (status === 'ACTIVE' ? s === 'OPEN' : s === 'CLOSED')) && (severity === 'ALL' || sev === severity.toUpperCase()); }).map(transform).slice(0, limit);
+  const rows = raw.filter(problem => {
+    const s = text(problem.status).toUpperCase();
+    const sev = text(problem.severityLevel).toUpperCase();
+    const statusOk = status === 'ALL' || (status === 'ACTIVE' ? s === 'OPEN' : (s === 'CLOSED' || s === 'RESOLVED'));
+    return statusOk && (severity === 'ALL' || sev === severity.toUpperCase());
+  }).map(transform).slice(0, limit);
   return { rows, count: rows.length, managementZones: [...zoneMap.values()].sort((a, b) => a.name.localeCompare(b.name)), availableSeverities: [...severitySet].sort(), generatedAt: new Date().toISOString(), source: 'Dynatrace Problems API' };
 }
