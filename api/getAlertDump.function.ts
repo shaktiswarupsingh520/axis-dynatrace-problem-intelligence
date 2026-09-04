@@ -2,32 +2,13 @@ import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 
 type Problem = Record<string, unknown>;
 interface Payload { from?: string; status?: string; severity?: string; managementZoneId?: string; limit?: number; }
-
-const text = (value: unknown): string => {
-  if (value == null) return '';
-  if (Array.isArray(value)) return value.map(text).filter(Boolean).join('; ');
-  if (typeof value === 'object') return JSON.stringify(value) ?? '';
-  return String(value);
-};
-const duration = (start: unknown, end: unknown) => {
-  const a = new Date(text(start)).getTime();
-  const b = end ? new Date(text(end)).getTime() : Date.now();
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return '—';
-  const mins = Math.max(0, b - a) / 60000;
-  return mins < 60 ? `${mins.toFixed(1)} min` : mins < 1440 ? `${(mins / 60).toFixed(1)} h` : `${(mins / 1440).toFixed(1)} d`;
-};
-const zoneName = (zone: unknown) => {
-  if (zone && typeof zone === 'object' && !Array.isArray(zone)) {
-    const z = zone as Record<string, unknown>;
-    return text(z.name) || text(z.id);
-  }
-  return text(zone);
-};
+interface Zone { id: string; name: string; }
+const text = (value: unknown): string => value == null ? '' : Array.isArray(value) ? value.map(text).filter(Boolean).join('; ') : typeof value === 'object' ? JSON.stringify(value) ?? '' : String(value);
+const duration = (start: unknown, end: unknown) => { const a = new Date(text(start)).getTime(); const b = end ? new Date(text(end)).getTime() : Date.now(); if (!Number.isFinite(a) || !Number.isFinite(b)) return '—'; const mins = Math.max(0, b - a) / 60000; return mins < 60 ? `${mins.toFixed(1)} min` : mins < 1440 ? `${(mins / 60).toFixed(1)} h` : `${(mins / 1440).toFixed(1)} d`; };
+const zoneObject = (value: unknown): Zone | undefined => { if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined; const z = value as Record<string, unknown>; const id = text(z.id); const name = text(z.name) || id; return id ? { id, name } : undefined; };
 
 async function fetchProblems(from: string, managementZoneId?: string) {
-  const selectors: string[] = [];
-  if (managementZoneId) selectors.push(`managementZoneIds("${managementZoneId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`);
-  const selector = selectors.length ? selectors.join(',') : undefined;
+  const selector = managementZoneId ? `managementZoneIds("${managementZoneId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")` : undefined;
   const rows: Problem[] = [];
   let nextPageKey: string | undefined;
   for (let page = 0; page < 3; page += 1) {
@@ -40,9 +21,9 @@ async function fetchProblems(from: string, managementZoneId?: string) {
 }
 
 function transform(problem: Problem) {
-  const zones = Array.isArray(problem.managementZones) ? problem.managementZones.map(zoneName).filter(Boolean) : [];
   const root = problem.rootCauseEntity && typeof problem.rootCauseEntity === 'object' ? problem.rootCauseEntity as Record<string, unknown> : undefined;
   const entities = Array.isArray(problem.affectedEntities) ? problem.affectedEntities.map(entity => entity && typeof entity === 'object' ? text((entity as Record<string, unknown>).name) : text(entity)).filter(Boolean) : [];
+  const zones = Array.isArray(problem.managementZones) ? problem.managementZones.map(zoneObject).filter((z): z is Zone => Boolean(z)) : [];
   return {
     display_id: problem.displayId ?? problem.problemId,
     'event.name': problem.title,
@@ -64,20 +45,18 @@ function transform(problem: Problem) {
 }
 
 export default async function (payload: Payload = {}) {
-  const allowedRanges = ['1h', '6h', '24h', '7d', '30d'];
-  const from = allowedRanges.includes(payload.from?.replace('now-', '') ?? '') ? payload.from as string : 'now-24h';
+  const range = ['1h', '6h', '24h', '7d', '30d'].includes(payload.from?.replace('now-', '') ?? '') ? payload.from as string : 'now-24h';
   const status = payload.status ?? 'ALL';
   const severity = payload.severity ?? 'ALL';
-  const managementZoneId = payload.managementZoneId && payload.managementZoneId !== 'ALL' ? payload.managementZoneId : undefined;
+  const zoneId = payload.managementZoneId && payload.managementZoneId !== 'ALL' ? payload.managementZoneId : undefined;
   const limit = Math.min(Math.max(payload.limit ?? 1000, 1), 1000);
-  const raw = await fetchProblems(from, managementZoneId);
-  const allZones = [...new Set(raw.flatMap(problem => Array.isArray(problem.managementZones) ? problem.managementZones.map(zoneName).filter(Boolean) : []))].sort((a, b) => a.localeCompare(b));
-  const filtered = raw.filter(problem => {
-    const normalizedStatus = text(problem.status).toUpperCase();
-    const normalizedSeverity = text(problem.severityLevel).toUpperCase();
-    const statusOk = status === 'ALL' || (status === 'ACTIVE' ? normalizedStatus === 'OPEN' : normalizedStatus === 'CLOSED');
-    const severityOk = severity === 'ALL' || normalizedSeverity === severity.toUpperCase();
-    return statusOk && severityOk;
+  const raw = await fetchProblems(range, zoneId);
+  const zoneMap = new Map<string, Zone>();
+  raw.forEach(problem => { if (Array.isArray(problem.managementZones)) problem.managementZones.map(zoneObject).filter((z): z is Zone => Boolean(z)).forEach(z => zoneMap.set(z.id, z)); });
+  const rows = raw.filter(problem => {
+    const s = text(problem.status).toUpperCase();
+    const sev = text(problem.severityLevel).toUpperCase();
+    return (status === 'ALL' || (status === 'ACTIVE' ? s === 'OPEN' : s === 'CLOSED')) && (severity === 'ALL' || sev === severity.toUpperCase());
   }).map(transform).slice(0, limit);
-  return { rows: filtered, count: filtered.length, managementZones: allZones, generatedAt: new Date().toISOString(), source: 'Dynatrace Problems API' };
+  return { rows, count: rows.length, managementZones: [...zoneMap.values()].sort((a, b) => a.name.localeCompare(b.name)), generatedAt: new Date().toISOString(), source: 'Dynatrace Problems API' };
 }
