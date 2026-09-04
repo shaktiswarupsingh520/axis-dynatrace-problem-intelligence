@@ -143,7 +143,7 @@ describe('getProblemDetails.function', () => {
     const result = await getProblemDetailsFunction({ problemId: 'P-456' });
 
     expect(result.problemAnalysis?.rootCause).toBe('No definitive root-cause entity exposed yet');
-    expect(result.problemAnalysis?.confidence).toBe('Pending Dynatrace Intelligence analysis');
+    expect(result.problemAnalysis?.confidence).toBe('Pending Davis analysis');
     expect(result.problemAnalysis?.probableCause).toContain('This is evidence, not a confirmed root cause');
   });
 

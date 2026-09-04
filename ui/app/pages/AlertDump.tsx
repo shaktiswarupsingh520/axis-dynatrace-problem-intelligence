@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from '@dynatrace/strato-components';
+import React, { useMemo, useState } from 'react';
 import { useAppFunction } from '@dynatrace-sdk/react-hooks';
 import { Flex } from '@dynatrace/strato-components/layouts';
 import { Heading, Paragraph } from '@dynatrace/strato-components/typography';
