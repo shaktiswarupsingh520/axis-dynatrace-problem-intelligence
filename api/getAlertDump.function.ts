@@ -27,6 +27,12 @@ function transform(problem: Problem) {
   return { display_id: problem.displayId ?? problem.problemId, 'event.name': problem.title, 'event.status': problem.status, 'event.severity': problem.severityLevel, 'event.category': problem.impactLevel, 'dt.davis.impact_level': problem.impactLevel, 'event.start': problem.startTime ? new Date(Number(problem.startTime)).toISOString() : '', 'event.end': problem.endTime ? new Date(Number(problem.endTime)).toISOString() : '', 'problem.duration': duration(problem.startTime, problem.endTime), affected_entity_names: entities.join('; '), root_cause_entity_id: text(root?.name) || text(root?.entityId), 'event.description': problem.title ?? '', 'labels.alerting_profile': '', 'dt.davis.is_duplicate': false, 'maintenance.is_under_maintenance': false, managementZones: zones } as Problem;
 }
 
+const collectZones = (rows: Problem[]) => {
+  const map = new Map<string, Zone>();
+  rows.forEach(problem => { if (Array.isArray(problem.managementZones)) problem.managementZones.map(zoneObject).filter((z): z is Zone => Boolean(z)).forEach(z => map.set(z.id, z)); });
+  return map;
+};
+
 export default async function (payload: Payload = {}) {
   const range = ['1h', '6h', '24h', '7d', '30d'].includes(payload.from?.replace('now-', '') ?? '') ? payload.from as string : 'now-24h';
   const status = payload.status ?? 'ALL';
@@ -34,9 +40,10 @@ export default async function (payload: Payload = {}) {
   const zoneId = payload.managementZoneId && payload.managementZoneId !== 'ALL' ? payload.managementZoneId : undefined;
   const limit = Math.min(Math.max(payload.limit ?? 1000, 1), 1000);
   const raw = await fetchProblems(range, zoneId);
-  const zoneMap = new Map<string, Zone>();
+  const zoneRows = zoneId ? await fetchProblems(range) : raw;
+  const zoneMap = collectZones(zoneRows);
   const severitySet = new Set<string>();
-  raw.forEach(problem => { const sev = text(problem.severityLevel); if (sev) severitySet.add(sev); if (Array.isArray(problem.managementZones)) problem.managementZones.map(zoneObject).filter((z): z is Zone => Boolean(z)).forEach(z => zoneMap.set(z.id, z)); });
+  raw.forEach(problem => { const sev = text(problem.severityLevel); if (sev) severitySet.add(sev); });
   const rows = raw.filter(problem => { const s = text(problem.status).toUpperCase(); const sev = text(problem.severityLevel).toUpperCase(); return (status === 'ALL' || (status === 'ACTIVE' ? s === 'OPEN' : s === 'CLOSED')) && (severity === 'ALL' || sev === severity.toUpperCase()); }).map(transform).slice(0, limit);
   return { rows, count: rows.length, managementZones: [...zoneMap.values()].sort((a, b) => a.name.localeCompare(b.name)), availableSeverities: [...severitySet].sort(), generatedAt: new Date().toISOString(), source: 'Dynatrace Problems API' };
 }
