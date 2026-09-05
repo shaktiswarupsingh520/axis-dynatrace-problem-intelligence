@@ -21,7 +21,6 @@ const asText = (value: unknown): string => {
   if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
   return JSON.stringify(value) ?? '';
 };
-
 const csvCell = (value: unknown): string => '"' + asText(value).replace(/"/g, '""') + '"';
 const dateText = (value: string): string => { const d = new Date(value); return Number.isFinite(d.getTime()) ? d.toLocaleString() : value || '—'; };
 const downloadBlob = (content: string, type: string, filename: string): void => { const url = URL.createObjectURL(new Blob([content], { type })); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
@@ -94,6 +93,7 @@ const reportText = (result: Result): string => {
 };
 
 const printRca = (result: Result): void => {
+  const report = reportText(result);
   const popup = window.open('', '_blank', 'width=1100,height=900');
   if (!popup) return;
   popup.document.title = 'Axis CIO RCA ' + result.problemId;
@@ -103,33 +103,62 @@ const printRca = (result: Result): void => {
   pre.style.fontSize = '11px';
   pre.style.lineHeight = '1.45';
   pre.style.margin = '24px';
-  pre.textContent = reportText(result);
+  pre.textContent = report;
   popup.document.body.appendChild(pre);
   window.setTimeout(() => { popup.focus(); popup.print(); }, 300);
 };
 
-export default function RcaWorkbench(): React.JSX.Element {
+export function RcaWorkbench(): React.JSX.Element {
   const navigate = useNavigate();
   const [problemId, setProblemId] = useState('');
   const [data, setData] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showOccurrences, setShowOccurrences] = useState(false);
+
   const analyze = async (): Promise<void> => {
-    if (!problemId.trim()) return;
+    const id = problemId.trim();
+    if (!id) return;
     setBusy(true); setError('');
     try {
-      const response = await fetch('/api/analyzeProblemRca', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ problemId: problemId.trim() }) });
+      const response = await fetch('/api/analyzeProblemRca', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ problemId: id }) });
       if (!response.ok) throw new Error('RCA request failed with HTTP ' + response.status);
-      setData(await response.json() as Result);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'RCA analysis failed'); }
-    finally { setBusy(false); }
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== 'object') throw new Error('RCA response was invalid.');
+      setData(payload as Result);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'RCA analysis failed');
+    } finally {
+      setBusy(false);
+    }
   };
+
   const scope = (data?.managementZones ?? []).join(', ') || 'Management zone not derived';
   return <div style={{ padding: 24 }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div><Heading>RCA Workbench</Heading><Paragraph>Evidence-backed Dynatrace problem analysis with Davis.</Paragraph></div><button type="button" onClick={() => navigate('/')}>Back</button></div>
-    <div style={{ display: 'flex', gap: 8, marginTop: 16 }}><input value={problemId} onChange={(e) => setProblemId(e.target.value)} placeholder="Enter problem ID" /><button type="button" disabled={busy} onClick={() => { void analyze(); }}>{busy ? 'Collecting evidence…' : 'Generate RCA'}</button></div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div><Heading>RCA Workbench</Heading><Paragraph>Evidence-backed Dynatrace problem analysis with Davis.</Paragraph></div>
+      <button type="button" onClick={() => navigate('/')}>Back</button>
+    </div>
+    <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+      <input value={problemId} onChange={(e) => setProblemId(e.target.value)} placeholder="Enter problem ID" onKeyDown={(e) => { if (e.key === 'Enter') void analyze(); }} />
+      <button type="button" disabled={busy} onClick={() => { void analyze(); }}>{busy ? 'Collecting evidence…' : 'Generate RCA'}</button>
+    </div>
     {error && <Paragraph>{error}</Paragraph>}
-    {data && <div style={{ marginTop: 24 }}><Paragraph><strong>Recurrence scope:</strong> Last 30 days · <strong>Management zone:</strong> {scope}</Paragraph><Paragraph><strong>Native root cause:</strong> {data.nativeRootCauseEntity || 'Not proven'}</Paragraph><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="button" onClick={() => setShowOccurrences(true)}>{data.occurrenceCount} · View records</button><button type="button" onClick={() => printRca(data)}>Download CIO-ready RCA PDF</button><button type="button" onClick={() => downloadRcaExcel(data)}>Download Excel</button></div><pre style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{data.analysis}</pre>{showOccurrences && <div style={{ marginTop: 16, padding: 16, border: '1px solid #ccd6e0' }}><button type="button" onClick={() => setShowOccurrences(false)}>Close</button><Heading>Past occurrences — {data.occurrenceCount}</Heading><Paragraph>Last 30 days · same Management Zone: {scope}. Showing {data.occurrences.length} records.</Paragraph><table><thead><tr>{['Problem ID','Started','Title','Status','Severity','Duration'].map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{data.occurrences.map((o) => <tr key={o.problemId}><td>{o.problemId}</td><td>{dateText(o.start)}</td><td>{o.title}</td><td>{o.status}</td><td>{o.severity}</td><td>{o.duration}</td></tr>)}</tbody></table></div>}</div>}
+    {data && <div style={{ marginTop: 24 }}>
+      <Paragraph><strong>Recurrence scope:</strong> Last 30 days · <strong>Management zone:</strong> {scope}</Paragraph>
+      <Paragraph><strong>Native root cause:</strong> {data.nativeRootCauseEntity || 'Not proven'}</Paragraph>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button type="button" onClick={() => setShowOccurrences(true)}>{data.occurrenceCount} · View records</button>
+        <button type="button" onClick={() => printRca(data)}>Download CIO-ready RCA PDF</button>
+        <button type="button" onClick={() => downloadRcaExcel(data)}>Download Excel</button>
+      </div>
+      <pre style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{data.analysis}</pre>
+      {showOccurrences && <div style={{ marginTop: 16, padding: 16, border: '1px solid #ccd6e0' }}>
+        <button type="button" onClick={() => setShowOccurrences(false)}>Close</button>
+        <Heading>Past occurrences — {data.occurrenceCount}</Heading>
+        <Paragraph>Last 30 days · same Management Zone: {scope}. Showing {data.occurrences.length} records.</Paragraph>
+        <table><thead><tr>{['Problem ID','Started','Title','Status','Severity','Duration'].map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{data.occurrences.map((o, index) => <tr key={o.problemId + '-' + index}><td>{o.problemId}</td><td>{dateText(o.start)}</td><td>{o.title}</td><td>{o.status}</td><td>{o.severity}</td><td>{o.duration}</td></tr>)}</tbody></table>
+      </div>}
+    </div>}
   </div>;
 }
