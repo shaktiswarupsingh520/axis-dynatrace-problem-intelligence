@@ -19,6 +19,9 @@ type Result = {
 
 type ApiResponse = Result;
 
+type InputChangeEvent = React.ChangeEvent<HTMLInputElement>;
+type KeyEvent = React.KeyboardEvent<HTMLInputElement>;
+
 const asText = (value: unknown): string => {
   if (value == null) return '';
   if (typeof value === 'string') return value;
@@ -51,7 +54,7 @@ function downloadRcaExcel(result: Result): void {
   downloadBlob(csv, 'application/vnd.ms-excel;charset=utf-8', 'axis-rca-' + result.problemId + '.xls');
 }
 
-const parseAnalysis = (analysis: string) => {
+const parseAnalysis = (analysis: string): Array<{ title: string; body: string }> => {
   const lines = analysis.split(/\r?\n/);
   const sections: Array<{ title: string; body: string }> = [];
   let current: { title: string; body: string } | null = null;
@@ -59,7 +62,8 @@ const parseAnalysis = (analysis: string) => {
     const match = line.match(/^\s*#{1,6}\s+(.+?)\s*$/);
     if (match) {
       if (current && current.body.trim()) sections.push({ title: current.title, body: current.body.trim() });
-      current = { title: match[1].replace(/[*_]/g, '').trim(), body: '' };
+      const title = match[1] ?? '';
+      current = { title: title.replace(/[*_]/g, '').trim(), body: '' };
     } else if (current) {
       current.body += (current.body ? '\n' : '') + line;
     }
@@ -68,38 +72,58 @@ const parseAnalysis = (analysis: string) => {
   return sections.length ? sections : [{ title: 'Davis Assist Analysis', body: analysis }];
 };
 
+const reportText = (result: Result): string => [
+  'AXIS BANK — AI-ASSISTED INCIDENT ROOT CAUSE ANALYSIS',
+  'Problem ID: ' + result.problemId,
+  'Native root-cause entity: ' + (result.nativeRootCauseEntity || 'Not proven'),
+  'Recurrence scope: ' + (result.recurrenceWindow || 'Last 30 days'),
+  'Management zone: ' + ((result.managementZones ?? []).join(', ') || 'Not derived'),
+  'Past occurrences: ' + result.occurrenceCount,
+  '', result.analysis,
+].join('\n');
+
 export function RcaWorkbench(): React.JSX.Element {
   const navigate = useNavigate();
-  const [problemId, setProblemId] = useState('');
+  const [problemId, setProblemId] = useState<string>('');
   const [data, setData] = useState<Result | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [showOccurrences, setShowOccurrences] = useState(false);
+  const [busy, setBusy] = useState<boolean>(false);
+  const [error, setError] = useState<string>('');
+  const [showOccurrences, setShowOccurrences] = useState<boolean>(false);
   const sections = useMemo(() => data ? parseAnalysis(data.analysis) : [], [data]);
   const facts = data?.problemFacts;
   const scope = (data?.managementZones ?? []).join(', ') || 'Management zone not derived';
 
   const analyze = async (): Promise<void> => {
-    const id = problemId.trim();
-    if (!id) return;
+    const id: string = problemId;
+    if (id.length === 0) return;
+    const normalizedId: string = id.trim();
+    if (normalizedId.length === 0) return;
     setBusy(true);
     setError('');
     try {
       const request = await fetch('/api/analyzeProblemRca', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ problemId: id }),
+        body: JSON.stringify({ problemId: normalizedId }),
       });
-      if (!request.ok) throw new Error('RCA request failed with HTTP ' + request.status);
-      const response: unknown = await request.json();
-      if (!response || typeof response !== 'object') throw new Error('RCA response was empty or invalid.');
-      setData(response as ApiResponse);
-    } catch (cause) {
+      if (!request.ok) throw new Error('RCA request failed with HTTP ' + String(request.status));
+      const jsonResponse: unknown = await request.json();
+      if (!jsonResponse || typeof jsonResponse !== 'object') throw new Error('RCA response was empty or invalid.');
+      setData(jsonResponse as ApiResponse);
+    } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'RCA analysis failed');
     } finally {
       setBusy(false);
     }
   };
+
+  const handleInputChange = (event: InputChangeEvent): void => {
+    setProblemId(event.target.value);
+  };
+  const handleKeyDown = (event: KeyEvent): void => {
+    if (event.key === 'Enter') void analyze();
+  };
+  const hasProblemId = problemId.length > 0;
 
   return <main className="rca-page">
     <div className="rca-shell">
@@ -115,9 +139,9 @@ export function RcaWorkbench(): React.JSX.Element {
       <section className="rca-input-card">
         <label className="rca-field">
           <span className="rca-label">Dynatrace Problem ID</span>
-          <input className="rca-input" value={problemId} onChange={(event) => setProblemId(event.target.value)} placeholder="e.g. P-260933994" onKeyDown={(event) => { if (event.key === 'Enter') void analyze(); }} />
+          <input className="rca-input" value={problemId} onChange={handleInputChange} placeholder="e.g. P-260933994" onKeyDown={handleKeyDown} />
         </label>
-        <button className="rca-primary" type="button" disabled={busy || !problemId.trim()} onClick={() => { void analyze(); }}>{busy ? 'Collecting evidence…' : 'Generate RCA'}</button>
+        <button className="rca-primary" type="button" disabled={busy || !hasProblemId} onClick={() => { void analyze(); }}>{busy ? 'Collecting evidence…' : 'Generate RCA'}</button>
       </section>
       {error && <div className="rca-error">{error}</div>}
 
@@ -154,7 +178,7 @@ export function RcaWorkbench(): React.JSX.Element {
               <div className="rca-fact"><span>Affected users</span><strong>{facts?.affectedUsers ?? 'Not available'}</strong></div>
               <div className="rca-fact"><span>Affected entities</span><strong>{facts?.affectedEntities ?? 'Not available'}</strong></div>
               <div className="rca-fact"><span>Recurrence window</span><strong>{data.recurrenceWindow || 'Last 30 days'}</strong></div>
-              <div className="rca-fact"><span>Past occurrences</span><button className="rca-inline-button" type="button" onClick={() => setShowOccurrences(true)}>{data.occurrenceCount} · View records</button></div>
+              <div className="rca-fact"><span>Historical records</span><strong>{data.occurrenceCount}</strong></div>
               <div className="rca-fact"><span>Correlated events</span><strong>{data.evidenceSummary.correlatedEvents}</strong></div>
               <div className="rca-fact"><span>Incident logs</span><strong>{data.evidenceSummary.incidentLogs}</strong></div>
               <div className="rca-fact"><span>Timeline snapshots</span><strong>{data.evidenceSummary.timelineSnapshots}</strong></div>
@@ -172,23 +196,4 @@ export function RcaWorkbench(): React.JSX.Element {
       </div>}
     </div>
   </main>;
-}
-
-function reportText(result: Result): string {
-  const facts = result.problemFacts ?? {};
-  const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived';
-  return [
-    'AXIS BANK — AI-ASSISTED INCIDENT ROOT CAUSE ANALYSIS',
-    'Problem ID: ' + result.problemId,
-    'Title: ' + (facts.title || 'Dynatrace problem'),
-    'Status: ' + (facts.status || 'Not available'),
-    'Severity: ' + (facts.severity || 'Not available'),
-    'Duration: ' + (facts.duration || 'Not available'),
-    'Native root-cause entity: ' + (result.nativeRootCauseEntity || 'Not proven'),
-    'Recurrence scope: ' + (result.recurrenceWindow || 'Last 30 days'),
-    'Management zone: ' + scope,
-    'Past occurrences: ' + result.occurrenceCount,
-    '',
-    result.analysis,
-  ].join('\n');
 }
