@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Heading, Paragraph } from '@dynatrace/strato-components/typography';
 import './RcaWorkbench.css';
 
 type Occurrence = { problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string };
@@ -18,7 +17,7 @@ type Result = {
   problemFacts?: ProblemFacts;
 };
 
-type AnalysisSection = { title: string; body: string };
+type ApiResponse = Result;
 
 const asText = (value: unknown): string => {
   if (value == null) return '';
@@ -28,54 +27,45 @@ const asText = (value: unknown): string => {
 };
 
 const csvCell = (value: unknown): string => '"' + asText(value).replace(/"/g, '""') + '"';
-const dateText = (value: string): string => { const d = new Date(value); return Number.isFinite(d.getTime()) ? d.toLocaleString() : value || '—'; };
-const downloadBlob = (content: string, type: string, filename: string): void => { const url = URL.createObjectURL(new Blob([content], { type })); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
+const dateText = (value: string): string => {
+  const d = new Date(value);
+  return Number.isFinite(d.getTime()) ? d.toLocaleString() : value || '—';
+};
+const downloadBlob = (content: string, type: string, filename: string): void => {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 
 function downloadRcaExcel(result: Result): void {
   const head = ['Problem ID','Native Root Cause','Recurrence Window','Management Zone Scope','Past Occurrences','Correlated Events','Incident Logs','Timeline Snapshots','RCA'];
-  const summary = [result.problemId,result.nativeRootCauseEntity || 'Not proven',result.recurrenceWindow || '30 days',(result.managementZones ?? []).join('; ') || 'Not derived',result.occurrenceCount,result.evidenceSummary.correlatedEvents,result.evidenceSummary.incidentLogs,result.evidenceSummary.timelineSnapshots,result.analysis];
-  const occHead = ['Problem ID','Title','Status','Severity','Started','Ended','Duration'];
-  const occRows = result.occurrences.map((o) => [o.problemId,o.title,o.status,o.severity,o.start,o.end,o.duration].map(csvCell).join(','));
-  const csv = '\uFEFF' + [head.map(csvCell).join(','),summary.map(csvCell).join(','),'',occHead.map(csvCell).join(','),...occRows].join('\r\n');
+  const summary = [result.problemId,result.nativeRootCauseEntity || 'Not proven',result.recurrenceWindow || 'Last 30 days',(result.managementZones ?? []).join('; ') || 'Not derived',result.occurrenceCount,result.evidenceSummary.correlatedEvents,result.evidenceSummary.incidentLogs,result.evidenceSummary.timelineSnapshots,result.analysis];
+  const occurrenceHead = ['Problem ID','Title','Status','Severity','Started','Ended','Duration'];
+  const occurrenceRows = result.occurrences.map((o) => [o.problemId,o.title,o.status,o.severity,o.start,o.end,o.duration].map(csvCell).join(','));
+  const csv = '\uFEFF' + [head.map(csvCell).join(','),summary.map(csvCell).join(','),'',occurrenceHead.map(csvCell).join(','),...occurrenceRows].join('\r\n');
   downloadBlob(csv, 'application/vnd.ms-excel;charset=utf-8', 'axis-rca-' + result.problemId + '.xls');
 }
 
-const parseAnalysis = (analysis: string): AnalysisSection[] => {
+const parseAnalysis = (analysis: string) => {
   const lines = analysis.split(/\r?\n/);
-  const sections: AnalysisSection[] = [];
-  let current: AnalysisSection | null = null;
+  const sections: Array<{ title: string; body: string }> = [];
+  let current: { title: string; body: string } | null = null;
   lines.forEach((line) => {
     const match = line.match(/^\s*#{1,6}\s+(.+?)\s*$/);
     if (match) {
-      if (current) sections.push({ title: current.title, body: current.body.trim() });
+      if (current && current.body.trim()) sections.push({ title: current.title, body: current.body.trim() });
       current = { title: match[1].replace(/[*_]/g, '').trim(), body: '' };
     } else if (current) {
       current.body += (current.body ? '\n' : '') + line;
     }
   });
-  if (current) sections.push({ title: current.title, body: current.body.trim() });
-  return sections.length ? sections.filter((section) => section.body) : [{ title: 'Davis Assist Analysis', body: analysis }];
-};
-
-const reportText = (result: Result): string => [
-  'AXIS BANK — AI-ASSISTED INCIDENT ROOT CAUSE ANALYSIS',
-  'Problem ID: ' + result.problemId,
-  'Native root-cause entity: ' + (result.nativeRootCauseEntity || 'Not proven'),
-  'Recurrence scope: ' + (result.recurrenceWindow || 'Last 30 days'),
-  'Management zone: ' + ((result.managementZones ?? []).join(', ') || 'Not derived'),
-  'Past occurrences: ' + result.occurrenceCount,
-  '', result.analysis,
-].join('\n');
-
-const printRca = (result: Result): void => {
-  const popup = window.open('', '_blank', 'width=1100,height=900');
-  if (!popup) return;
-  popup.document.title = 'Axis CIO RCA ' + result.problemId;
-  const pre = popup.document.createElement('pre');
-  pre.style.whiteSpace = 'pre-wrap'; pre.style.fontFamily = 'Arial, sans-serif'; pre.style.fontSize = '11px'; pre.style.lineHeight = '1.45'; pre.style.margin = '24px';
-  pre.textContent = reportText(result);
-  popup.document.body.appendChild(pre);
-  window.setTimeout(() => { popup.focus(); popup.print(); }, 300);
+  if (current && current.body.trim()) sections.push({ title: current.title, body: current.body.trim() });
+  return sections.length ? sections : [{ title: 'Davis Assist Analysis', body: analysis }];
 };
 
 export function RcaWorkbench(): React.JSX.Element {
@@ -85,21 +75,30 @@ export function RcaWorkbench(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showOccurrences, setShowOccurrences] = useState(false);
-
   const sections = useMemo(() => data ? parseAnalysis(data.analysis) : [], [data]);
   const facts = data?.problemFacts;
   const scope = (data?.managementZones ?? []).join(', ') || 'Management zone not derived';
 
   const analyze = async (): Promise<void> => {
-    if (!problemId.trim()) return;
-    setBusy(true); setError('');
+    const id = problemId.trim();
+    if (!id) return;
+    setBusy(true);
+    setError('');
     try {
-      const response = await fetch('/api/analyzeProblemRca', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ problemId: problemId.trim() }) });
-      if (!response.ok) throw new Error('RCA request failed with HTTP ' + response.status);
-      setData(await response.json() as Result);
+      const request = await fetch('/api/analyzeProblemRca', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ problemId: id }),
+      });
+      if (!request.ok) throw new Error('RCA request failed with HTTP ' + request.status);
+      const response: unknown = await request.json();
+      if (!response || typeof response !== 'object') throw new Error('RCA response was empty or invalid.');
+      setData(response as ApiResponse);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'RCA analysis failed');
-    } finally { setBusy(false); }
+    } finally {
+      setBusy(false);
+    }
   };
 
   return <main className="rca-page">
@@ -114,7 +113,10 @@ export function RcaWorkbench(): React.JSX.Element {
       </header>
 
       <section className="rca-input-card">
-        <label className="rca-field"><span className="rca-label">Dynatrace Problem ID</span><input className="rca-input" value={problemId} onChange={(e) => setProblemId(e.target.value)} placeholder="e.g. P-260933994" onKeyDown={(e) => { if (e.key === 'Enter') void analyze(); }} /></label>
+        <label className="rca-field">
+          <span className="rca-label">Dynatrace Problem ID</span>
+          <input className="rca-input" value={problemId} onChange={(event) => setProblemId(event.target.value)} placeholder="e.g. P-260933994" onKeyDown={(event) => { if (event.key === 'Enter') void analyze(); }} />
+        </label>
         <button className="rca-primary" type="button" disabled={busy || !problemId.trim()} onClick={() => { void analyze(); }}>{busy ? 'Collecting evidence…' : 'Generate RCA'}</button>
       </section>
       {error && <div className="rca-error">{error}</div>}
@@ -126,7 +128,7 @@ export function RcaWorkbench(): React.JSX.Element {
           <div className="rca-hero-meta">{data.problemId} · Generated {dateText(data.generatedAt)}</div>
           <div className="rca-actions">
             <button className="rca-action" type="button" onClick={() => setShowOccurrences(true)}>View {data.occurrenceCount} past occurrences</button>
-            <button className="rca-action" type="button" onClick={() => printRca(data)}>Print / Save CIO RCA</button>
+            <button className="rca-action" type="button" onClick={() => downloadBlob(reportText(data), 'text/plain;charset=utf-8', 'axis-rca-' + data.problemId + '.txt')}>Download CIO-ready RCA</button>
             <button className="rca-action" type="button" onClick={() => downloadRcaExcel(data)}>Export RCA Excel</button>
           </div>
         </div>
@@ -152,7 +154,7 @@ export function RcaWorkbench(): React.JSX.Element {
               <div className="rca-fact"><span>Affected users</span><strong>{facts?.affectedUsers ?? 'Not available'}</strong></div>
               <div className="rca-fact"><span>Affected entities</span><strong>{facts?.affectedEntities ?? 'Not available'}</strong></div>
               <div className="rca-fact"><span>Recurrence window</span><strong>{data.recurrenceWindow || 'Last 30 days'}</strong></div>
-              <div className="rca-fact"><span>Historical records</span><strong>{data.occurrenceCount}</strong></div>
+              <div className="rca-fact"><span>Past occurrences</span><button className="rca-inline-button" type="button" onClick={() => setShowOccurrences(true)}>{data.occurrenceCount} · View records</button></div>
               <div className="rca-fact"><span>Correlated events</span><strong>{data.evidenceSummary.correlatedEvents}</strong></div>
               <div className="rca-fact"><span>Incident logs</span><strong>{data.evidenceSummary.incidentLogs}</strong></div>
               <div className="rca-fact"><span>Timeline snapshots</span><strong>{data.evidenceSummary.timelineSnapshots}</strong></div>
@@ -161,7 +163,7 @@ export function RcaWorkbench(): React.JSX.Element {
         </div>
       </section>}
 
-      {showOccurrences && data && <div className="rca-modal-backdrop" role="presentation" onMouseDown={(e) => { if (e.target === e.currentTarget) setShowOccurrences(false); }}>
+      {showOccurrences && data && <div className="rca-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowOccurrences(false); }}>
         <section className="rca-modal" role="dialog" aria-modal="true" aria-label="Past occurrences">
           <div className="rca-modal-head"><div><div className="rca-modal-title">Past occurrences · {data.occurrenceCount}</div><div className="rca-panel-note">{data.recurrenceWindow || 'Last 30 days'} · scope: {scope}</div></div><button className="rca-close" type="button" onClick={() => setShowOccurrences(false)}>Close</button></div>
           <div className="rca-modal-info">Showing {data.occurrences.length} retrieved records. The occurrence count is authoritative; the table is a returned sample.</div>
@@ -170,4 +172,23 @@ export function RcaWorkbench(): React.JSX.Element {
       </div>}
     </div>
   </main>;
+}
+
+function reportText(result: Result): string {
+  const facts = result.problemFacts ?? {};
+  const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived';
+  return [
+    'AXIS BANK — AI-ASSISTED INCIDENT ROOT CAUSE ANALYSIS',
+    'Problem ID: ' + result.problemId,
+    'Title: ' + (facts.title || 'Dynatrace problem'),
+    'Status: ' + (facts.status || 'Not available'),
+    'Severity: ' + (facts.severity || 'Not available'),
+    'Duration: ' + (facts.duration || 'Not available'),
+    'Native root-cause entity: ' + (result.nativeRootCauseEntity || 'Not proven'),
+    'Recurrence scope: ' + (result.recurrenceWindow || 'Last 30 days'),
+    'Management zone: ' + scope,
+    'Past occurrences: ' + result.occurrenceCount,
+    '',
+    result.analysis,
+  ].join('\n');
 }
