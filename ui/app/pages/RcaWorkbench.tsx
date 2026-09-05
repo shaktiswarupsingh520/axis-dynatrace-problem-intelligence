@@ -1,124 +1,135 @@
-import React, { useMemo, useState } from 'react';
-import { useAppFunction } from '@dynatrace-sdk/react-hooks';
-import { Flex } from '@dynatrace/strato-components/layouts';
-import { Heading, Paragraph } from '@dynatrace/strato-components/typography';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Heading, Paragraph } from '@dynatrace/strato-components/typography';
 
-interface Occurrence { problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string; }
-interface ProblemFacts { title: string; status: string; severity: string; category: string; start: string; end: string; duration: string; impactLevel: string; affectedUsers: string; affectedEntities: string; }
-interface Result { problemId: string; nativeRootCauseEntity: string | null; definitiveRootCause: boolean; analysis: string; generatedAt: string; assistFallback: boolean; problemFacts?: ProblemFacts; occurrenceCount: number; occurrences: Occurrence[]; managementZones?: string[]; recurrenceWindow?: string; evidenceSummary: { correlatedEvents: number; incidentLogs: number; historicalOccurrences: number; timelineSnapshots: number }; }
+type Occurrence = { problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string };
+type Result = {
+  problemId: string;
+  nativeRootCauseEntity: string | null;
+  analysis: string;
+  generatedAt: string;
+  occurrenceCount: number;
+  occurrences: Occurrence[];
+  managementZones?: string[];
+  recurrenceWindow?: string;
+  evidenceSummary: { correlatedEvents: number; incidentLogs: number; historicalOccurrences: number; timelineSnapshots: number };
+};
 
-const stringify = (value: unknown): string => { if (value == null) return ''; if (typeof value === 'string') return value; if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value); if (Array.isArray(value)) return value.map(stringify).filter(Boolean).join('; '); return JSON.stringify(value) ?? ''; };
-const escCsv = (value: unknown) => `"${stringify(value).replace(/"/g, '""')}"`;
-const dt = (value: string) => { const d = new Date(value); return Number.isFinite(d.getTime()) ? d.toLocaleString() : value || '—'; };
-const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
-const download = (content: string, type: string, filename: string) => { const url = URL.createObjectURL(new Blob([content], { type })); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
+const asText = (value: unknown): string => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+  return JSON.stringify(value) ?? '';
+};
 
-function downloadRcaExcel(result: Result) { const headers = ['Problem ID','Native Root Cause','Recurrence Window','Management Zone Scope','Past Occurrences','Correlated Events','Incident Logs','Timeline Snapshots','RCA']; const summary = [result.problemId,result.nativeRootCauseEntity || 'Not proven',result.recurrenceWindow || '30 days',(result.managementZones ?? []).join('; ') || 'Not derived',result.occurrenceCount,result.evidenceSummary.correlatedEvents,result.evidenceSummary.incidentLogs,result.evidenceSummary.timelineSnapshots,result.analysis]; const occurrenceHeaders = ['Problem ID','Title','Status','Severity','Started','Ended','Duration']; const rows = result.occurrences.map((o) => [o.problemId,o.title,o.status,o.severity,o.start,o.end,o.duration].map(escCsv).join(',')); const csv = '\uFEFF' + [headers.map(escCsv).join(','),summary.map(escCsv).join(','),'',occurrenceHeaders.map(escCsv).join(','),...rows].join('\r\n'); download(csv,'application/vnd.ms-excel;charset=utf-8',`axis-rca-${result.problemId}.xls`); }
-function sectionText(analysis: string, patterns: string[]): string { const lines = analysis.split(/\r?\n/); const start = lines.findIndex((line) => patterns.some((pattern) => line.toLowerCase().includes(pattern.toLowerCase()))); if (start < 0) return ''; const out: string[] = []; for (let i = start + 1; i < lines.length; i += 1) { if (/^\s*#{1,6}\s+/.test(lines[i]) && i > start + 1) break; out.push(lines[i]); } return out.join('\n').trim(); }
-function firstParagraph(analysis: string): string { const executive = sectionText(analysis,['executive summary']); const clean = executive.replace(/^[-*]+\s*/gm,'').trim(); return clean.split(/\n\s*\n/)[0]?.trim() || clean || 'Evidence-backed RCA generated from the retrieved Dynatrace problem data.'; }
+const csvCell = (value: unknown): string => '"' + asText(value).replace(/"/g, '""') + '"';
+const dateText = (value: string): string => { const d = new Date(value); return Number.isFinite(d.getTime()) ? d.toLocaleString() : value || '—'; };
+const downloadBlob = (content: string, type: string, filename: string): void => { const url = URL.createObjectURL(new Blob([content], { type })); const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
 
-function reportHtml(result: Result): string {
-  const facts = result.problemFacts ?? { title: 'Dynatrace problem', status: 'Not available', severity: 'Not available', category: 'Not available', start: '', end: '', duration: 'Not available', impactLevel: 'Not available', affectedUsers: 'Not available', affectedEntities: 'Not available' };
-  const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived';
-  const root = result.nativeRootCauseEntity || 'Not identified';
-  const parts = [
-    'Axis Bank — Problem Intelligence',
-    'Incident Root Cause Analysis',
+function downloadRcaExcel(result: Result): void {
+  const head = ['Problem ID','Native Root Cause','Recurrence Window','Management Zone Scope','Past Occurrences','Correlated Events','Incident Logs','Timeline Snapshots','RCA'];
+  const summary = [result.problemId,result.nativeRootCauseEntity || 'Not proven',result.recurrenceWindow || '30 days',(result.managementZones ?? []).join('; ') || 'Not derived',result.occurrenceCount,result.evidenceSummary.correlatedEvents,result.evidenceSummary.incidentLogs,result.evidenceSummary.timelineSnapshots,result.analysis];
+  const occHead = ['Problem ID','Title','Status','Severity','Started','Ended','Duration'];
+  const occRows = result.occurrences.map((o) => [o.problemId,o.title,o.status,o.severity,o.start,o.end,o.duration].map(csvCell).join(','));
+  const csv = '\uFEFF' + [head.map(csvCell).join(','),summary.map(csvCell).join(','),'',occHead.map(csvCell).join(','),...occRows].join('\r\n');
+  downloadBlob(csv, 'application/vnd.ms-excel;charset=utf-8', 'axis-rca-' + result.problemId + '.xls');
+}
+
+const extractSection = (analysis: string, names: string[]): string => {
+  const lines = analysis.split(/\r?\n/);
+  const start = lines.findIndex((line) => names.some((name) => line.toLowerCase().includes(name.toLowerCase())));
+  if (start < 0) return '';
+  const body: string[] = [];
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (/^\s*#{1,6}\s+/.test(lines[i]) && i > start + 1) break;
+    body.push(lines[i]);
+  }
+  return body.join('\n').trim();
+};
+
+const reportText = (result: Result): string => {
+  const zones = (result.managementZones ?? []).join(', ') || 'Management zone not derived';
+  const root = result.nativeRootCauseEntity || 'Not proven';
+  return [
+    'AXIS BANK — AI-ASSISTED INCIDENT ROOT CAUSE ANALYSIS',
     'Problem ID: ' + result.problemId,
-    'Title: ' + facts.title,
-    'Status: ' + facts.status + ' | Severity: ' + facts.severity + ' | Duration: ' + facts.duration,
-    'Incident window: ' + (facts.start ? dt(facts.start) : 'Not available') + ' to ' + (facts.end ? dt(facts.end) : '—'),
-    'Root-cause entity: ' + root,
+    'Native root-cause entity: ' + root,
+    'Recurrence scope: Last 30 days',
+    'Management zone: ' + zones,
     'Past occurrences: ' + result.occurrenceCount,
-    'Management zone: ' + scope,
     '',
     'EXECUTIVE SUMMARY',
-    firstParagraph(result.analysis),
+    extractSection(result.analysis, ['executive summary']) || result.analysis,
     '',
     'ROOT CAUSE ASSESSMENT',
-    sectionText(result.analysis, ['root cause assessment']) || 'Not available from retrieved evidence.',
+    extractSection(result.analysis, ['root cause assessment']) || 'Not available from retrieved evidence.',
     '',
     'TECHNICAL ROOT-CAUSE CHAIN',
-    sectionText(result.analysis, ['technical root-cause chain']) || 'Not available from retrieved evidence.',
+    extractSection(result.analysis, ['technical root-cause chain']) || 'Not available from retrieved evidence.',
     '',
     'INCIDENT TIMELINE',
-    sectionText(result.analysis, ['incident timeline']) || 'Not available from retrieved evidence.',
+    extractSection(result.analysis, ['incident timeline']) || 'Not available from retrieved evidence.',
     '',
     'PAST OCCURRENCES',
-    result.occurrences.slice(0, 30).map((o) => [o.problemId, dt(o.start), o.title, o.status, o.duration].join(' | ')).join('\n') || 'No occurrence records returned.',
+    result.occurrences.map((o) => [o.problemId,dateText(o.start),o.title,o.status,o.duration].join(' | ')).join('\n') || 'No occurrence records returned.',
     '',
     'IMMEDIATE REMEDIATION PLAN',
-    sectionText(result.analysis, ['immediate remediation plan']) || 'Not available from retrieved evidence.',
+    extractSection(result.analysis, ['immediate remediation plan']) || 'Not available from retrieved evidence.',
     '',
     'PERMANENT / PREVENTIVE ACTIONS',
-    sectionText(result.analysis, ['permanent / preventive actions']) || 'Not available from retrieved evidence.',
+    extractSection(result.analysis, ['permanent / preventive actions']) || 'Not available from retrieved evidence.',
     '',
     'MONITORING & ALERTING RECOMMENDATIONS',
-    sectionText(result.analysis, ['monitoring & alerting recommendations']) || 'Not available from retrieved evidence.',
+    extractSection(result.analysis, ['monitoring & alerting recommendations']) || 'Not available from retrieved evidence.',
     '',
     'VALIDATION CHECKLIST',
-    sectionText(result.analysis, ['validation checklist']) || 'Not available from retrieved evidence.',
+    extractSection(result.analysis, ['validation checklist']) || 'Not available from retrieved evidence.',
     '',
     'RCA CONFIDENCE & EVIDENCE GAPS',
-    sectionText(result.analysis, ['rca confidence & evidence gaps']) || 'Not available from retrieved evidence.',
+    extractSection(result.analysis, ['rca confidence & evidence gaps']) || 'Not available from retrieved evidence.',
     '',
     'AI ASSESSMENT APPENDIX',
     result.analysis,
-  ];
-  return parts.join('\n');
-}
+  ].join('\n');
+};
 
-function printRca(result: Result): void {
-  const report = reportHtml(result);
-  const blob = new Blob([report], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const popup = window.open(url, '_blank', 'width=1100,height=900');
-  if (!popup) { URL.revokeObjectURL(url); return; }
-  popup.addEventListener('load', () => { popup.print(); }, { once: true });
-  window.setTimeout(() => URL.revokeObjectURL(url), 60000);
-}
+const printRca = (result: Result): void => {
+  const popup = window.open('', '_blank', 'width=1100,height=900');
+  if (!popup) return;
+  popup.document.title = 'Axis CIO RCA ' + result.problemId;
+  const pre = popup.document.createElement('pre');
+  pre.style.whiteSpace = 'pre-wrap';
+  pre.style.fontFamily = 'Arial, sans-serif';
+  pre.style.fontSize = '11px';
+  pre.style.lineHeight = '1.45';
+  pre.style.margin = '24px';
+  pre.textContent = reportText(result);
+  popup.document.body.appendChild(pre);
+  window.setTimeout(() => { popup.focus(); popup.print(); }, 300);
+};
 
-export default function RcaWorkbench() {
+export default function RcaWorkbench(): React.JSX.Element {
   const navigate = useNavigate();
-  const analyze = useAppFunction<typeof import('../../../api/analyzeProblemRca.function').default>({ name: 'analyzeProblemRca' });
   const [problemId, setProblemId] = useState('');
   const [data, setData] = useState<Result | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [showOccurrences, setShowOccurrences] = useState(false);
-  const [showRca, setShowRca] = useState(false);
-  const result = useMemo(() => data, [data]);
-
-  const run = async () => {
+  const analyze = async (): Promise<void> => {
     if (!problemId.trim()) return;
-    setBusy(true); setError(''); setData(null);
-    try { const response = await analyze.invoke({ problemId: problemId.trim() }); setData(response as Result); }
-    catch (e) { setError(e instanceof Error ? e.message : 'RCA analysis failed'); }
+    setBusy(true); setError('');
+    try {
+      const response = await fetch('/api/analyzeProblemRca', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ problemId: problemId.trim() }) });
+      if (!response.ok) throw new Error('RCA request failed with HTTP ' + response.status);
+      setData(await response.json() as Result);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'RCA analysis failed'); }
     finally { setBusy(false); }
   };
-
+  const scope = (data?.managementZones ?? []).join(', ') || 'Management zone not derived';
   return <div style={{ padding: 24 }}>
-    <Flex alignItems="center" justifyContent="space-between"><div><Heading>RCA Workbench</Heading><Paragraph>Evidence-backed Dynatrace problem analysis with Davis.</Paragraph></div><button type="button" onClick={() => navigate('/')}>Back</button></Flex>
-    <div style={{ display: 'flex', gap: 8, marginTop: 16 }}><input value={problemId} onChange={(e) => setProblemId(e.target.value)} placeholder="Enter problem ID" /><button type="button" onClick={run} disabled={busy}>{busy ? 'Collecting evidence…' : 'Generate RCA'}</button></div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div><Heading>RCA Workbench</Heading><Paragraph>Evidence-backed Dynatrace problem analysis with Davis.</Paragraph></div><button type="button" onClick={() => navigate('/')}>Back</button></div>
+    <div style={{ display: 'flex', gap: 8, marginTop: 16 }}><input value={problemId} onChange={(e) => setProblemId(e.target.value)} placeholder="Enter problem ID" /><button type="button" disabled={busy} onClick={() => { void analyze(); }}>{busy ? 'Collecting evidence…' : 'Generate RCA'}</button></div>
     {error && <Paragraph>{error}</Paragraph>}
-    {result && <div style={{ marginTop: 24 }}>
-      <Heading>AI-Generated RCA</Heading>
-      <Paragraph>{result.nativeRootCauseEntity ? 'Native root-cause entity: ' + result.nativeRootCauseEntity : 'Native root cause not proven from retrieved evidence.'}</Paragraph>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button type="button" onClick={() => setShowOccurrences(true)}>{result.occurrenceCount} · View records</button>
-        <button type="button" onClick={() => setShowRca((value) => !value)}>{showRca ? 'Hide RCA' : 'Show RCA'}</button>
-        <button type="button" onClick={() => printRca(result)}>Print / Save CIO RCA</button>
-        <button type="button" onClick={() => downloadRcaExcel(result)}>Export RCA Excel</button>
-      </div>
-      {showRca && <pre style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{result.analysis}</pre>}
-      {showOccurrences && <div style={{ marginTop: 16, border: '1px solid #ccc', padding: 16 }}>
-        <button type="button" onClick={() => setShowOccurrences(false)}>Close</button>
-        <Heading>Past occurrences — {result.occurrenceCount}</Heading>
-        <Paragraph>Authoritative count from the retrieved history query. Showing up to {result.occurrences.length} records for detail. Scope: {scopeLabel(result)}.</Paragraph>
-        <table><thead><tr><th>Problem ID</th><th>Started</th><th>Title</th><th>Status</th><th>Duration</th></tr></thead><tbody>{result.occurrences.map((o) => <tr key={o.problemId}><td>{o.problemId}</td><td>{dt(o.start)}</td><td>{o.title}</td><td>{o.status}</td><td>{o.duration}</td></tr>)}</tbody></table>
-      </div>}
-    </div>}
+    {data && <div style={{ marginTop: 24 }}><Paragraph><strong>Recurrence scope:</strong> Last 30 days · <strong>Management zone:</strong> {scope}</Paragraph><Paragraph><strong>Native root cause:</strong> {data.nativeRootCauseEntity || 'Not proven'}</Paragraph><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}><button type="button" onClick={() => setShowOccurrences(true)}>{data.occurrenceCount} · View records</button><button type="button" onClick={() => printRca(data)}>Download CIO-ready RCA PDF</button><button type="button" onClick={() => downloadRcaExcel(data)}>Download Excel</button></div><pre style={{ whiteSpace: 'pre-wrap', marginTop: 16 }}>{data.analysis}</pre>{showOccurrences && <div style={{ marginTop: 16, padding: 16, border: '1px solid #ccd6e0' }}><button type="button" onClick={() => setShowOccurrences(false)}>Close</button><Heading>Past occurrences — {data.occurrenceCount}</Heading><Paragraph>Last 30 days · same Management Zone: {scope}. Showing {data.occurrences.length} records.</Paragraph><table><thead><tr>{['Problem ID','Started','Title','Status','Severity','Duration'].map((h) => <th key={h}>{h}</th>)}</tr></thead><tbody>{data.occurrences.map((o) => <tr key={o.problemId}><td>{o.problemId}</td><td>{dateText(o.start)}</td><td>{o.title}</td><td>{o.status}</td><td>{o.severity}</td><td>{o.duration}</td></tr>)}</tbody></table></div>}</div>}
   </div>;
 }
-function scopeLabel(result: Result): string { return (result.managementZones ?? []).join(', ') || 'All Management Zones'; }
