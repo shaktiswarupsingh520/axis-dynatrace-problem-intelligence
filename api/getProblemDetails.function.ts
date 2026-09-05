@@ -40,8 +40,7 @@ async function loadGrailProblemContext(problemId: string): Promise<{ problemReco
   const problemRecords = await executeDql(`fetch dt.davis.problems\n| filter not(dt.davis.is_duplicate) and display_id == "${safeId}"\n| fields display_id,event.id,event.name,event.description,event.start,event.end,event.status,event.severity,event.category,dt.analysis.ready,dt.davis.event_ids,dt.davis.affected_users_count,dt.davis.impact_level,root_cause.smartscape_entity,root_cause_entity_id,affected_entity_ids,affected_entity_names\n| limit 1`);
   const problemRecord = problemRecords[0];
   if (!problemRecord) return undefined;
-  const rawEventIds: unknown = problemRecord['dt.davis.event_ids'];
-  const eventIds = stringArray(rawEventIds);
+  const eventIds = stringArray(problemRecord['dt.davis.event_ids']);
   if (!eventIds.length) return { problemRecord, eventRecords: [] };
   const eventArray = eventIds.slice(0, 60).map((id) => `"${escapeDql(id)}"`).join(', ');
   const eventRecords = await executeDql(`fetch dt.davis.events\n| filter in(event.id,array(${eventArray}))\n| fields event.id,event.name,event.description,event.start,event.end,event.type,event.category,event.severity,dt.smartscape_source.id,dt.smartscape_source.type,dt.davis.is_rootcause_relevant\n| sort event.start asc\n| limit 80`);
@@ -64,10 +63,24 @@ function buildCausalAnalysis(problem: { title?: string; impactLevel?: string; ro
   const ready = context?.problemRecord['dt.analysis.ready'];
   const supporting = text(causalEvent?.['event.description']) || text(causalEvent?.['event.name']) || combinedEvidence[0];
   let probableCause = ''; let remediation = ''; let confidence = '';
-  if (rootCauseName) { const entity = `${rootCauseName}${rootCauseType ? ` (${rootCauseType})` : ''}`; probableCause = `Davis identified ${entity} as the root-cause entity. ${supporting ? `Supporting signal: ${supporting}.` : 'No additional root-cause event description was returned.'}`; remediation = `Investigate ${entity} first, validate the triggering telemetry, and follow the dependency path to the impacted component before remediation.`; confidence = supporting ? 'High' : 'Medium'; }
-  else if (causalEvent && text(causalEvent['dt.smartscape_source.id'])) { probableCause = `Davis did not expose a definitive root-cause entity. The strongest root-cause-relevant event points to ${text(causalEvent['dt.smartscape_source.id'])}. ${supporting ? `Signal: ${supporting}.` : ''}`; remediation = `Investigate ${text(causalEvent['dt.smartscape_source.id'])} and correlate its telemetry, logs and dependency path before changing production configuration.`; confidence = 'Medium'; }
-  else if (supporting) { probableCause = `Davis did not expose a definitive root-cause entity. Strongest available evidence: ${supporting}. This is evidence, not a confirmed root cause.`; remediation = 'Correlate the affected entity, Davis event timeline and incident logs before assigning a definitive root cause.'; confidence = ready === false ? 'Pending Davis analysis' : 'Low'; }
-  else { probableCause = 'Davis has not exposed enough causal evidence to determine a root cause yet.'; remediation = 'Refresh the problem after Davis analysis completes and validate the underlying telemetry.'; confidence = ready === false ? 'Pending Davis analysis' : 'Insufficient evidence'; }
+  if (rootCauseName) {
+    const entity = `${rootCauseName}${rootCauseType ? ` (${rootCauseType})` : ''}`;
+    probableCause = `Davis identified ${entity} as the root-cause entity. ${supporting ? `Supporting signal: ${supporting}.` : 'No additional root-cause event description was returned.'}`;
+    remediation = `Investigate ${entity} first, validate the triggering telemetry, and follow the dependency path to the impacted component before remediation.`;
+    confidence = supporting ? 'High' : 'Medium';
+  } else if (causalEvent && text(causalEvent['dt.smartscape_source.id'])) {
+    probableCause = `Davis did not expose a definitive root-cause entity. The strongest root-cause-relevant event points to ${text(causalEvent['dt.smartscape_source.id'])}. ${supporting ? `Signal: ${supporting}.` : ''}`;
+    remediation = `Investigate ${text(causalEvent['dt.smartscape_source.id'])} and correlate its telemetry, logs and dependency path before changing production configuration.`;
+    confidence = 'Medium';
+  } else if (supporting) {
+    probableCause = `Davis did not expose a definitive root-cause entity. Strongest available evidence: ${supporting}. This is evidence, not a confirmed root cause.`;
+    remediation = 'Correlate the affected entity, Davis event timeline and incident logs before assigning a definitive root cause.';
+    confidence = ready === false ? 'Pending Davis analysis' : 'Low';
+  } else {
+    probableCause = 'Davis has not exposed enough causal evidence to determine a root cause yet.';
+    remediation = 'Refresh the problem after Davis analysis completes and validate the underlying telemetry.';
+    confidence = ready === false ? 'Pending Davis analysis' : 'Insufficient evidence';
+  }
   const impacts = problem.impactAnalysis?.impacts ?? [];
   const users = impacts.reduce((sum: number, item: ImpactLike) => sum + (item.estimatedAffectedUsers ?? 0), 0);
   const calls = impacts.reduce((sum: number, item: ImpactLike) => sum + (item.numberOfPotentiallyAffectedServiceCalls ?? 0), 0);
@@ -75,8 +88,44 @@ function buildCausalAnalysis(problem: { title?: string; impactLevel?: string; ro
   return { description: text(context?.problemRecord['event.description']) || combinedEvidence.join('. ') || title, rootCause: rootCauseName || 'No definitive root-cause entity exposed yet', rootCauseEntityId: rootCauseId || undefined, rootCauseEntityType: rootCauseType || undefined, probableCause, impactSummary, remediation, confidence, evidence: combinedEvidence, eventIds: stringArray(context?.problemRecord['dt.davis.event_ids']), analysisReady: ready, affectedUsers: typeof context?.problemRecord['dt.davis.affected_users_count'] === 'number' ? context.problemRecord['dt.davis.affected_users_count'] : undefined, eventNames: [...new Set(events.map((event: Row) => text(event['event.name'])).filter(Boolean))].slice(0, 12), causalEvents: events.filter((event: Row) => event['dt.davis.is_rootcause_relevant'] === true).slice(0, 10).map((event: Row) => ({ id: text(event['event.id']), name: text(event['event.name']), description: text(event['event.description']), entityId: text(event['dt.smartscape_source.id']), entityType: text(event['dt.smartscape_source.type']) })) };
 }
 
-function extractAssistText(value: unknown): string { if (typeof value === 'string') return value.trim(); if (Array.isArray(value)) return value.map(extractAssistText).filter(Boolean).join('\n').trim(); if (!value || typeof value !== 'object') return ''; const record = value as Row; for (const key of ['text','answer','content','message']) { const candidate = extractAssistText(record[key]); if (candidate) return candidate; } const tokens: unknown = record.tokens; return Array.isArray(tokens) ? tokens.map(text).join('').trim() : ''; }
+function extractAssistText(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (Array.isArray(value)) return value.map(extractAssistText).filter(Boolean).join('\n').trim();
+  if (!value || typeof value !== 'object') return '';
+  const record = value as Row;
+  for (const key of ['text', 'answer', 'content', 'message']) {
+    const candidate = extractAssistText(record[key]);
+    if (candidate) return candidate;
+  }
+  const tokens: unknown = record.tokens;
+  return Array.isArray(tokens) ? tokens.map(text).join('').trim() : '';
+}
 
-async function enhanceWithAssist(problemId: string, context?: { problemRecord: Row; eventRecords: Row[] }) { if (!context) return undefined; const p = context.problemRecord; const evidence = JSON.stringify({ problem: { id: problemId, title: text(p['event.name']), status: text(p['event.status']), severity: text(p['event.severity']), impact: text(p['dt.davis.impact_level']), start: text(p['event.start']), end: text(p['event.end']), description: text(p['event.description']), rootCause: text(p['root_cause.smartscape_entity']) || text(p.root_cause_entity_id), affectedUsers: text(p['dt.davis.affected_users_count']), affectedEntities: text(p.affected_entity_names) }, events: context.eventRecords.slice(0, 20) }).slice(0, 6200); const prompt = `Give a concise, technically specific RCA summary for Dynatrace Problem ${problemId}. Use ONLY this evidence. Do not invent a root cause. If not proven, explicitly say so. Return exactly four labeled lines: ROOT CAUSE, EVIDENCE, CONFIDENCE, REMEDIATION. Keep the response under 1800 characters.\nEVIDENCE:\n${evidence}`; try { const response = await publicClient.recommenderConversation({ acceptType: 'application/json', body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: evidence }, { type: 'instruction', value: 'Analyze the supplied Dynatrace evidence directly.' }], annotations: { origin: 'Axis Problem Intelligence Overview RCA', problemId } }); const answer = extractAssistText(response); if (!answer) return undefined; const get = (label: string) => { const match = answer.match(new RegExp(`${label}\\s*:\\s*(.*?)(?=\\n[A-Z ]+\\s*:|$)`, 'is')); return match?.[1]?.trim(); }; return { probableCause: get('ROOT CAUSE') || undefined, evidenceText: get('EVIDENCE') || undefined, confidence: get('CONFIDENCE') || undefined, remediation: get('REMEDIATION') || undefined }; } catch { return undefined; } }
+async function enhanceWithAssist(problemId: string, context?: { problemRecord: Row; eventRecords: Row[] }) {
+  if (!context) return undefined;
+  const p = context.problemRecord;
+  const evidence = JSON.stringify({ problem: { id: problemId, title: text(p['event.name']), status: text(p['event.status']), severity: text(p['event.severity']), impact: text(p['dt.davis.impact_level']), start: text(p['event.start']), end: text(p['event.end']), description: text(p['event.description']), rootCause: text(p['root_cause.smartscape_entity']) || text(p.root_cause_entity_id), affectedUsers: text(p['dt.davis.affected_users_count']), affectedEntities: text(p.affected_entity_names) }, events: context.eventRecords.slice(0, 20) }).slice(0, 6200);
+  const prompt = `Give a concise, technically specific RCA summary for Dynatrace Problem ${problemId}. Use ONLY this evidence. Do not invent a root cause. If not proven, explicitly say so. Return exactly four labeled lines: ROOT CAUSE, EVIDENCE, CONFIDENCE, REMEDIATION. Keep the response under 1800 characters.\nEVIDENCE:\n${evidence}`;
+  try {
+    const response = await publicClient.recommenderConversation({ body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: evidence }, { type: 'instruction', value: 'Analyze the supplied Dynatrace evidence directly.' }], annotations: { origin: 'Axis Problem Intelligence Overview RCA', problemId } } });
+    const answer = extractAssistText(response);
+    if (!answer) return undefined;
+    const get = (label: string) => {
+      const match = answer.match(new RegExp(`${label}\\s*:\\s*(.*?)(?=\\n[A-Z ]+\\s*:|$)`, 'is'));
+      return match?.[1]?.trim();
+    };
+    return { probableCause: get('ROOT CAUSE') || undefined, evidenceText: get('EVIDENCE') || undefined, confidence: get('CONFIDENCE') || undefined, remediation: get('REMEDIATION') || undefined };
+  } catch {
+    return undefined;
+  }
+}
 
-export default async function (payload: GetProblemDetailsPayload) { if (!payload?.problemId) throw new Error('problemId is required'); const problem = await problemsClient.getProblem({ problemId: payload.problemId, fields: 'evidenceDetails,impactAnalysis,recentComments' }); const context = await loadGrailProblemContext(payload.problemId); const causal = buildCausalAnalysis(problem, context); const ai = await enhanceWithAssist(payload.problemId, context); const problemAnalysis = { ...causal, probableCause: ai?.probableCause || causal.probableCause, remediation: ai?.remediation || causal.remediation, confidence: ai?.confidence || causal.confidence, evidence: ai?.evidenceText ? [ai.evidenceText, ...causal.evidence] : causal.evidence }; return { ...problem, problemAnalysis }; }
+export default async function (payload: GetProblemDetailsPayload) {
+  if (!payload?.problemId) throw new Error('problemId is required');
+  const problem = await problemsClient.getProblem({ problemId: payload.problemId, fields: 'evidenceDetails,impactAnalysis,recentComments' });
+  const context = await loadGrailProblemContext(payload.problemId);
+  const causal = buildCausalAnalysis(problem, context);
+  const ai = await enhanceWithAssist(payload.problemId, context);
+  const problemAnalysis = { ...causal, probableCause: ai?.probableCause || causal.probableCause, remediation: ai?.remediation || causal.remediation, confidence: ai?.confidence || causal.confidence, evidence: ai?.evidenceText ? [ai.evidenceText, ...causal.evidence] : causal.evidence };
+  return { ...problem, problemAnalysis };
+}
