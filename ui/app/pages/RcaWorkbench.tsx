@@ -27,7 +27,6 @@ const stringify = (value: unknown): string => {
   return JSON.stringify(value) ?? '';
 };
 const escCsv = (value: unknown) => `"${stringify(value).replace(/"/g, '""')}"`;
-const escHtml = (value: unknown) => stringify(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c);
 const dt = (value: string) => { const d = new Date(value); return Number.isFinite(d.getTime()) ? d.toLocaleString() : value || '—'; };
 const download = (content: string, type: string, filename: string) => { const url = URL.createObjectURL(new Blob([content], { type })); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
 
@@ -41,12 +40,101 @@ function downloadRcaExcel(result: Result) {
 }
 
 function printRca(result: Result) {
-  const occurrenceRows = result.occurrences.slice(0, 50).map((o) => `<tr><td>${escHtml(o.problemId)}</td><td>${escHtml(dt(o.start))}</td><td>${escHtml(o.status)}</td><td>${escHtml(o.severity)}</td><td>${escHtml(o.duration)}</td></tr>`).join('');
+  const occurrenceRows = result.occurrences.slice(0, 50);
   const windowRef = window.open('', '_blank', 'width=1000,height=900');
   if (!windowRef) throw new Error('Allow pop-ups to print the RCA.');
-  const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived';
-  windowRef.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Axis RCA ${escHtml(result.problemId)}</title><style>@page{size:A4;margin:14mm}body{font-family:Arial,sans-serif;color:#172334;font-size:10.5px;line-height:1.5}h1{color:#173b70;margin:0;font-size:22px}h2{color:#173b70;font-size:14px;border-bottom:2px solid #d9e5f2;padding-bottom:4px;margin-top:20px}.hero{padding:18px;border:1px solid #d5e1ee;border-radius:10px;background:#f5f9fd}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:12px}.card{padding:8px;border:1px solid #dce5ee;border-radius:7px}.label{font-size:8px;color:#718197;text-transform:uppercase}.value{font-weight:700}.analysis{white-space:pre-wrap}.scope{margin-top:10px;padding:8px;border-left:4px solid #4c82b8;background:#edf5fc}table{width:100%;border-collapse:collapse;font-size:8px}th,td{padding:5px;border-bottom:1px solid #e4e9ef;text-align:left;vertical-align:top}th{background:#eef4f9}.note{margin-top:18px;padding:9px;background:#fff8e8;border-left:4px solid #e4a11b}@media print{.note{break-inside:avoid}table{break-inside:auto}tr{break-inside:avoid}}</style></head><body><div class="hero"><div style="font-size:9px;color:#65758a">AXIS BANK | ApMoSys TECHNOLOGIES</div><h1>AI-Assisted Incident Root Cause Analysis</h1><div style="font-size:9px;color:#65758a">Problem ${escHtml(result.problemId)} · Generated ${escHtml(dt(result.generatedAt))}</div><div class="grid"><div class="card"><div class="label">Native root cause</div><div class="value">${escHtml(result.nativeRootCauseEntity || 'Not proven')}</div></div><div class="card"><div class="label">Correlated events</div><div class="value">${result.evidenceSummary.correlatedEvents}</div></div><div class="card"><div class="label">Incident logs</div><div class="value">${result.evidenceSummary.incidentLogs}</div></div><div class="card"><div class="label">Past occurrences</div><div class="value">${result.occurrenceCount}</div></div></div><div class="scope"><b>Recurrence scope:</b> Last 30 days · <b>Management zone:</b> ${escHtml(scope)}</div></div><h2>AI Root Cause Analysis</h2><div class="analysis">${escHtml(result.analysis)}</div><h2>Past Occurrences</h2><table><thead><tr><th>Problem</th><th>Start</th><th>Status</th><th>Severity</th><th>Duration</th></tr></thead><tbody>${occurrenceRows || '<tr><td colspan="5">No occurrence records returned.</td></tr>'}</tbody></table><div class="note"><b>RCA governance:</b> Facts come from retrieved Dynatrace evidence. Inferences and recommendations are proposals and must be validated before production action.</div><script>window.onload=()=>setTimeout(()=>window.print(),500)</script></body></html>`);
-  windowRef.document.close();
+
+  const doc = windowRef.document;
+  const style = doc.createElement('style');
+  style.textContent = `@page{size:A4;margin:14mm}body{font-family:Arial,sans-serif;color:#172334;font-size:10.5px;line-height:1.5}h1{color:#173b70;margin:0;font-size:22px}h2{color:#173b70;font-size:14px;border-bottom:2px solid #d9e5f2;padding-bottom:4px;margin-top:20px}.hero{padding:18px;border:1px solid #d5e1ee;border-radius:10px;background:#f5f9fd}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-top:12px}.card{padding:8px;border:1px solid #dce5ee;border-radius:7px}.label{font-size:8px;color:#718197;text-transform:uppercase}.value{font-weight:700}.analysis{white-space:pre-wrap}.scope{margin-top:10px;padding:8px;border-left:4px solid #4c82b8;background:#edf5fc}table{width:100%;border-collapse:collapse;font-size:8px}th,td{padding:5px;border-bottom:1px solid #e4e9ef;text-align:left;vertical-align:top}th{background:#eef4f9}.note{margin-top:18px;padding:9px;background:#fff8e8;border-left:4px solid #e4a11b}`;
+  doc.head.appendChild(style);
+  doc.title = `Axis RCA ${result.problemId}`;
+
+  const body = doc.body;
+  const hero = doc.createElement('div');
+  hero.className = 'hero';
+
+  const brand = doc.createElement('div');
+  brand.textContent = 'AXIS BANK | ApMoSys TECHNOLOGIES';
+  brand.className = 'label';
+  hero.appendChild(brand);
+
+  const title = doc.createElement('h1');
+  title.textContent = 'AI-Assisted Incident Root Cause Analysis';
+  hero.appendChild(title);
+
+  const generated = doc.createElement('div');
+  generated.className = 'label';
+  generated.textContent = `Problem ${result.problemId} · Generated ${dt(result.generatedAt)}`;
+  hero.appendChild(generated);
+
+  const grid = doc.createElement('div');
+  grid.className = 'grid';
+  const cards: Array<[string, string]> = [
+    ['Native root cause', result.nativeRootCauseEntity || 'Not proven'],
+    ['Correlated events', String(result.evidenceSummary.correlatedEvents)],
+    ['Incident logs', String(result.evidenceSummary.incidentLogs)],
+    ['Past occurrences', String(result.occurrenceCount)],
+  ];
+  for (const [label, value] of cards) {
+    const card = doc.createElement('div');
+    card.className = 'card';
+    const l = doc.createElement('div'); l.className = 'label'; l.textContent = label;
+    const v = doc.createElement('div'); v.className = 'value'; v.textContent = value;
+    card.append(l, v); grid.appendChild(card);
+  }
+  hero.appendChild(grid);
+
+  const scope = doc.createElement('div');
+  scope.className = 'scope';
+  scope.textContent = `Recurrence scope: ${result.recurrenceWindow || 'Last 30 days'} · Management zone: ${(result.managementZones ?? []).join(', ') || 'Management zone not derived'}`;
+  hero.appendChild(scope);
+  body.appendChild(hero);
+
+  const analysisHeading = doc.createElement('h2');
+  analysisHeading.textContent = 'AI Root Cause Analysis';
+  body.appendChild(analysisHeading);
+  const analysis = doc.createElement('div');
+  analysis.className = 'analysis';
+  analysis.textContent = result.analysis;
+  body.appendChild(analysis);
+
+  const occurrenceHeading = doc.createElement('h2');
+  occurrenceHeading.textContent = 'Past Occurrences';
+  body.appendChild(occurrenceHeading);
+
+  const table = doc.createElement('table');
+  const thead = doc.createElement('thead');
+  const headerRow = doc.createElement('tr');
+  for (const header of ['Problem', 'Start', 'Status', 'Severity', 'Duration']) {
+    const th = doc.createElement('th'); th.textContent = header; headerRow.appendChild(th);
+  }
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = doc.createElement('tbody');
+  if (occurrenceRows.length === 0) {
+    const row = doc.createElement('tr');
+    const cell = doc.createElement('td'); cell.colSpan = 5; cell.textContent = 'No occurrence records returned.';
+    row.appendChild(cell); tbody.appendChild(row);
+  } else {
+    for (const occurrence of occurrenceRows) {
+      const row = doc.createElement('tr');
+      for (const value of [occurrence.problemId, dt(occurrence.start), occurrence.status, occurrence.severity, occurrence.duration]) {
+        const cell = doc.createElement('td'); cell.textContent = value; row.appendChild(cell);
+      }
+      tbody.appendChild(row);
+    }
+  }
+  table.appendChild(tbody);
+  body.appendChild(table);
+
+  const note = doc.createElement('div');
+  note.className = 'note';
+  note.textContent = 'RCA governance: Facts come from retrieved Dynatrace evidence. Inferences and recommendations are proposals and must be validated before production action.';
+  body.appendChild(note);
+
+  windowRef.addEventListener('load', () => { windowRef.setTimeout(() => windowRef.print(), 500); });
 }
 
 export const RcaWorkbench = () => {
