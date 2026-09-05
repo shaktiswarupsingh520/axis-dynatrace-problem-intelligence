@@ -38,7 +38,7 @@ export function buildCioRcaHtml(result: CioRcaResult): string {
   const facts = result.problemFacts ?? {};
   const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived';
   const root = result.nativeRootCauseEntity || 'Not proven by available evidence';
-  const names: Array<[string, string[]]> = [
+  const headings: Array<[string, string[]]> = [
     ['Executive Summary', ['executive summary']],
     ['Root Cause Assessment', ['root cause assessment']],
     ['Technical Root-Cause Chain', ['technical root-cause chain']],
@@ -51,7 +51,7 @@ export function buildCioRcaHtml(result: CioRcaResult): string {
     ['Validation Checklist', ['validation checklist']],
     ['RCA Confidence & Evidence Gaps', ['rca confidence & evidence gaps']],
   ];
-  const body = names.map(([title, keys]) => '<section><h2>' + escapeText(title) + '</h2><pre>' + escapeText(section(result.analysis, keys) || 'Not available from retrieved evidence.') + '</pre></section>').join('');
+  const body = headings.map(([title, names]) => '<section><h2>' + escapeText(title) + '</h2><pre>' + escapeText(section(result.analysis, names)) + '</pre></section>').join('');
   const occurrenceRows = result.occurrences.slice(0, 30).map((occurrence) => '<tr><td>' + escapeText(occurrence.problemId) + '</td><td>' + escapeText(dateText(occurrence.start)) + '</td><td>' + escapeText(occurrence.title) + '</td><td>' + escapeText(occurrence.status) + '</td><td>' + escapeText(occurrence.severity) + '</td><td>' + escapeText(occurrence.duration) + '</td></tr>').join('');
   const metrics = [
     ['Status', text(facts.status) || '—'],
@@ -59,9 +59,9 @@ export function buildCioRcaHtml(result: CioRcaResult): string {
     ['Duration', text(facts.duration) || '—'],
     ['Recurrence', String(result.occurrenceCount)],
   ];
-  const metricHtml = metrics.map(([label, value]) => '<div style="padding:12px;border:1px solid #d8e1ea;border-radius:7px"><div style="font-size:9px;text-transform:uppercase;color:#6d7f92;font-weight:700">' + escapeText(label) + '</div><div style="margin-top:4px;font-weight:700">' + escapeText(value) + '</div></div>').join('');
-  const html = '<!doctype html><html><head><meta charset="utf-8"><title>Axis CIO RCA ' + escapeText(result.problemId) + '</title></head><body style="font-family:Arial,sans-serif;margin:0;padding:24px;color:#172334;font-size:11px;line-height:1.5"><div style="padding:20px;border:1px solid #d5e1ee;border-radius:10px;background:#f5f9fd"><div style="font-size:9px;color:#65758a">AXIS BANK | ApMoSys TECHNOLOGIES</div><h1 style="font-size:24px;color:#173b70;margin:4px 0">AI-Assisted Incident Root Cause Analysis</h1><p><b>Problem:</b> ' + escapeText(result.problemId) + ' · <b>Title:</b> ' + escapeText(text(facts.title) || 'Dynatrace Problem') + '<br><b>Generated:</b> ' + escapeText(dateText(result.generatedAt)) + '</p><div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">' + metricHtml + '</div><p><b>Root cause:</b> ' + escapeText(root) + '<br><b>Recurrence scope:</b> Last 30 days<br><b>Management zone:</b> ' + escapeText(scope) + '</p></div>' + body + '<section><h2 style="font-size:14px;color:#173b70;border-bottom:2px solid #d9e5f2;padding-bottom:5px">Occurrence Detail</h2><table style="width:100%;border-collapse:collapse;font-size:8px"><thead><tr><th style="padding:5px;text-align:left;background:#eef4f9">Problem</th><th style="padding:5px;text-align:left;background:#eef4f9">Started</th><th style="padding:5px;text-align:left;background:#eef4f9">Title</th><th style="padding:5px;text-align:left;background:#eef4f9">Status</th><th style="padding:5px;text-align:left;background:#eef4f9">Severity</th><th style="padding:5px;text-align:left;background:#eef4f9">Duration</th></tr></thead><tbody>' + (occurrenceRows || '<tr><td colspan="6">No occurrence records returned.</td></tr>') + '</tbody></table></section><div style="margin-top:18px;padding:10px;background:#fff8e8;border-left:4px solid #e4a11b"><b>Governance:</b> Dynatrace telemetry is treated as observed evidence. AI text may include inference and proposed actions; those require SRE validation.</div></body></html>';
-  return html;
+  const metricHtml = metrics.map(([label, value]) => '<div class="m"><div class="l">' + escapeText(label) + '</div><div class="v">' + escapeText(value) + '</div></div>').join('');
+  const occurrenceHtml = occurrenceRows || '<tr><td colspan="6">No occurrence records returned.</td></tr>';
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Axis CIO RCA ' + escapeText(result.problemId) + '</title></head><body><div class="hero"><div class="brand">AXIS BANK | ApMoSys TECHNOLOGIES</div><h1>AI-Assisted Incident Root Cause Analysis</h1><div class="meta">Problem ' + escapeText(result.problemId) + ' · ' + escapeText(text(facts.title) || 'Dynatrace Problem') + ' · Generated ' + escapeText(dateText(result.generatedAt)) + '</div><div class="metrics">' + metricHtml + '</div><div class="scope"><b>Root cause:</b> ' + escapeText(root) + '<br><b>Recurrence:</b> Last 30 days<br><b>Management zone:</b> ' + escapeText(scope) + '</div></div>' + body + '<section><h2>Occurrence Detail</h2><table><thead><tr><th>Problem</th><th>Started</th><th>Title</th><th>Status</th><th>Severity</th><th>Duration</th></tr></thead><tbody>' + occurrenceHtml + '</tbody></table></section><div class="note"><b>Governance:</b> Dynatrace telemetry is observed evidence. AI interpretation and proposed actions require SRE validation.</div></body></html>';
 }
 
 export function downloadCioRca(html: string): void {
