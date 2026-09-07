@@ -32,7 +32,7 @@ const section = (analysis: string, names: string[]): string => {
   return body.join('\n').trim();
 };
 
-const escapeText = (value: string): string => value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char] ?? char));
+const escapeText = (value: string): string => value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
 const dateText = (value: string): string => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString() : value || '—'; };
 
 export function buildCioRcaHtml(result: CioRcaResult): string {
@@ -40,37 +40,150 @@ export function buildCioRcaHtml(result: CioRcaResult): string {
   const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived';
   const root = result.nativeRootCauseEntity || 'Not proven by available evidence';
   const names: Array<[string, string[]]> = [
-    ['Executive Summary', ['executive summary']],
-    ['Root Cause Assessment', ['root cause assessment']],
-    ['Technical Root-Cause Chain', ['technical root-cause chain']],
-    ['Incident Timeline', ['incident timeline']],
-    ['Past Occurrences & Recurrence Pattern', ['past occurrences', 'recurrence pattern']],
-    ['Impact Assessment', ['impact assessment']],
-    ['Immediate Remediation Plan', ['immediate remediation plan']],
-    ['Permanent / Preventive Actions', ['permanent / preventive actions']],
-    ['Monitoring & Alerting Recommendations', ['monitoring & alerting recommendations']],
-    ['Validation Checklist', ['validation checklist']],
-    ['RCA Confidence & Evidence Gaps', ['rca confidence & evidence gaps']],
+    ['Executive Summary', ['executive summary']], ['Incident Overview', ['incident overview']], ['Root Cause Assessment', ['root cause assessment']],
+    ['Technical Root-Cause Chain', ['technical root-cause chain']], ['Incident Timeline', ['incident timeline']], ['Past Occurrences & Recurrence Pattern', ['past occurrences', 'recurrence pattern']],
+    ['Impact Assessment', ['impact assessment']], ['Immediate Remediation Plan', ['immediate remediation plan']], ['Permanent / Preventive Actions', ['permanent / preventive actions']],
+    ['Monitoring & Alerting Recommendations', ['monitoring & alerting recommendations']], ['Validation Checklist', ['validation checklist']], ['RCA Confidence & Evidence Gaps', ['rca confidence & evidence gaps']],
   ];
-  const body = names.map(([title, keys]) => '<section><h2>' + escapeText(title) + '</h2><pre>' + escapeText(section(result.analysis, keys)) + '</pre></section>').join('');
-  const occurrenceRows = result.occurrences.slice(0, 30).map((o) => '<tr><td>' + escapeText(o.problemId) + '</td><td>' + escapeText(dateText(o.start)) + '</td><td>' + escapeText(o.title) + '</td><td>' + escapeText(o.status) + '</td><td>' + escapeText(o.severity) + '</td><td>' + escapeText(o.duration) + '</td></tr>').join('');
+  const body = names.map(([title, keys]) => '<section><h2>' + escapeText(title) + '</h2><pre>' + escapeText(section(result.analysis, keys) || 'Not available from retrieved evidence.') + '</pre></section>').join('');
+  const occurrenceRows = result.occurrences.slice(0, 50).map((o) => '<tr><td>' + escapeText(o.problemId) + '</td><td>' + escapeText(dateText(o.start)) + '</td><td>' + escapeText(o.title) + '</td><td>' + escapeText(o.status) + '</td><td>' + escapeText(o.severity) + '</td><td>' + escapeText(o.duration) + '</td></tr>').join('');
   const metrics = [['Status', text(facts.status) || '—'], ['Severity', text(facts.severity) || '—'], ['Duration', text(facts.duration) || '—'], ['Recurrence', String(result.occurrenceCount)]];
   const metricHtml = metrics.map(([label, value]) => '<div><div class="label">' + escapeText(label) + '</div><div class="value">' + escapeText(value) + '</div></div>').join('');
-  const css = [
-    'body{font-family:Arial,sans-serif}',
-    'h1{font-size:24px;color:#173b70}',
-    'h2{font-size:14px;color:#173b70;border-bottom:2px solid #d9e5f2;padding-bottom:5px;margin-top:22px}',
-    '.hero{padding:20px;border:1px solid #d5e1ee;border-radius:10px;background:#f5f9fd}',
-    '.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}',
-    '.label{font-size:9px;text-transform:uppercase;color:#6d7f92;font-weight:700}',
-    '.value{font-weight:700}',
-    '.note{margin-top:18px;padding:10px;background:#fff8e8;border-left:4px solid #e4a11b}',
-    'pre{font-family:Arial,sans-serif;white-space:pre-wrap;font-size:10px;line-height:1.5}',
-    'table{width:100%;border-collapse:collapse;font-size:8px}',
-    'th,td{padding:5px;text-align:left;border-bottom:1px solid #e4e9ef}',
-    'th{background:#eef4f9}',
-  ].join('');
-  return '<!doctype html><html><head><meta charset="utf-8"><title>Axis CIO RCA ' + escapeText(result.problemId) + '</title><style>' + css + '</style></head><body><div class="hero"><div class="label">AXIS BANK | ApMoSys TECHNOLOGIES</div><h1>AI-Assisted Incident Root Cause Analysis</h1><p><b>Problem:</b> ' + escapeText(result.problemId) + ' · <b>Title:</b> ' + escapeText(text(facts.title) || 'Dynatrace Problem') + '<br><b>Generated:</b> ' + escapeText(dateText(result.generatedAt)) + '</p><div class="grid">' + metricHtml + '</div><p><b>Root cause:</b> ' + escapeText(root) + '<br><b>Recurrence scope:</b> Last 30 days<br><b>Management zone:</b> ' + escapeText(scope) + '</p></div>' + body + '<section><h2>Occurrence Detail</h2><table><thead><tr><th>Problem</th><th>Started</th><th>Title</th><th>Status</th><th>Severity</th><th>Duration</th></tr></thead><tbody>' + (occurrenceRows || '<tr><td colspan="6">No occurrence records returned.</td></tr>') + '</tbody></table></section><div class="note"><b>Governance:</b> Dynatrace telemetry is treated as observed evidence. AI text may include inference and proposed actions; those require SRE validation.</div></body></html>';
+  const html = '<!doctype html><html><head><meta charset="utf-8"><title>Axis CIO RCA ' + escapeText(result.problemId) + '</title><style>' + 'body{font-family:Arial,sans-serif;margin:0;padding:28px;color:#172334;font-size:11px;line-height:1.5}.hero{padding:22px;border:1px solid #d5e1ee;border-radius:10px;background:#f5f9fd}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.label{font-size:9px;text-transform:uppercase;color:#6d7f92;font-weight:700}.value{margin-top:4px;font-weight:700}h1{font-size:24px;color:#173b70;margin:4px 0}h2{font-size:14px;color:#173b70;border-bottom:2px solid #d9e5f2;padding-bottom:5px;margin-top:22px}pre{font-family:Arial,sans-serif;white-space:pre-wrap;font-size:10px;line-height:1.5}table{width:100%;border-collapse:collapse;font-size:8px}th,td{padding:5px;text-align:left;border-bottom:1px solid #e4e9ef}th{background:#eef4f9}.note{margin-top:18px;padding:10px;background:#fff8e8;border-left:4px solid #e4a11b}' + '</style></head><body><div class="hero"><div class="label">AXIS BANK | ApMoSys TECHNOLOGIES</div><h1>AI-Assisted Incident Root Cause Analysis</h1><p><b>Problem:</b> ' + escapeText(result.problemId) + ' · <b>Title:</b> ' + escapeText(text(facts.title) || 'Dynatrace Problem') + '<br><b>Generated:</b> ' + escapeText(dateText(result.generatedAt)) + '</p><div class="grid">' + metricHtml + '</div><p><b>Root cause:</b> ' + escapeText(root) + '<br><b>Recurrence scope:</b> ' + escapeText(result.recurrenceWindow || 'Last 30 days') + '<br><b>Management zone:</b> ' + escapeText(scope) + '</p></div>' + body + '<section><h2>Occurrence Detail</h2><table><thead><tr><th>Problem</th><th>Started</th><th>Title</th><th>Status</th><th>Severity</th><th>Duration</th></tr></thead><tbody>' + (occurrenceRows || '<tr><td colspan="6">No occurrence records returned.</td></tr>') + '</tbody></table></section><div class="note"><b>Governance:</b> Dynatrace telemetry is treated as observed evidence. AI text may include inference and proposed actions; those require SRE validation.</div></body></html>';
+  return html;
+}
+
+const pdfEscape = (value: string): string => value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/[\r\n]+/g, ' ');
+const wrap = (value: string, width = 92): string[] => {
+  const output: string[] = [];
+  for (const raw of value.split(/\r?\n/)) {
+    const line = raw.replace(/\t/g, '    ').trimEnd();
+    if (!line) { output.push(''); continue; }
+    let remaining = line;
+    while (remaining.length > width) {
+      let cut = remaining.lastIndexOf(' ', width);
+      if (cut < 20) cut = width;
+      output.push(remaining.slice(0, cut).trim());
+      remaining = remaining.slice(cut).trimStart();
+    }
+    output.push(remaining);
+  }
+  return output;
+};
+
+function pdfPage(lines: string[], pageNumber: number, title: string): string {
+  const commands: string[] = [];
+  commands.push('q 0.96 0.98 1 rg 0 0 595 842 re f Q');
+  commands.push('q 0.08 0.24 0.42 rg 0 800 595 42 re f Q');
+  commands.push('BT /F2 18 Tf 40 815 Td (' + pdfEscape(title) + ') Tj ET');
+  commands.push('BT /F1 8 Tf 40 18 Td (AXIS BANK | ApMoSys TECHNOLOGIES | Confidential | Page ' + String(pageNumber) + ') Tj ET');
+  let y = 778;
+  for (const line of lines) {
+    if (line.startsWith('§')) {
+      const heading = line.slice(1);
+      commands.push('q 0.90 0.94 0.98 rg 34 ' + String(y - 5) + ' 527 20 re f Q');
+      commands.push('BT /F2 10 Tf 42 ' + String(y + 1) + ' Td (' + pdfEscape(heading) + ') Tj ET');
+      y -= 28;
+    } else if (line.startsWith('!')) {
+      commands.push('BT /F2 10 Tf 42 ' + String(y) + ' Td (' + pdfEscape(line.slice(1)) + ') Tj ET');
+      y -= 15;
+    } else {
+      commands.push('BT /F1 8.2 Tf 42 ' + String(y) + ' Td (' + pdfEscape(line) + ') Tj ET');
+      y -= 11;
+    }
+  }
+  return commands.join('\n');
+}
+
+export function buildCioRcaPdf(result: CioRcaResult): Blob {
+  const facts = result.problemFacts ?? {};
+  const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived';
+  const root = result.nativeRootCauseEntity || 'Not proven by available evidence';
+  const sections: Array<[string, string[]]> = [
+    ['Executive Summary', ['executive summary']], ['Incident Overview', ['incident overview']], ['Root Cause Assessment', ['root cause assessment']],
+    ['Technical Root-Cause Chain', ['technical root-cause chain']], ['Incident Timeline', ['incident timeline']], ['Past Occurrences & Recurrence Pattern', ['past occurrences', 'recurrence pattern']],
+    ['Impact Assessment', ['impact assessment']], ['Immediate Remediation Plan', ['immediate remediation plan']], ['Permanent / Preventive Actions', ['permanent / preventive actions']],
+    ['Monitoring & Alerting Recommendations', ['monitoring & alerting recommendations']], ['Validation Checklist', ['validation checklist']], ['RCA Confidence & Evidence Gaps', ['rca confidence & evidence gaps']],
+  ];
+  const all: string[] = [
+    'AXIS BANK — AI-ASSISTED INCIDENT RCA',
+    '!Problem: ' + result.problemId,
+    '!Title: ' + (text(facts.title) || 'Dynatrace Problem'),
+    '!Status: ' + (text(facts.status) || '—') + '   Severity: ' + (text(facts.severity) || '—') + '   Duration: ' + (text(facts.duration) || '—'),
+    '!Native root cause: ' + root,
+    '!Recurrence scope: ' + (result.recurrenceWindow || '30d') + ' · ' + scope,
+    '!Past occurrences: ' + String(result.occurrenceCount),
+    '§Executive Incident Brief',
+    'Leadership view — evidence-backed RCA generated from Dynatrace Davis telemetry.',
+    '§Incident Facts',
+    'Problem ID: ' + result.problemId,
+    'Category: ' + (text(facts.category) || '—'),
+    'Impact: ' + (text(facts.impactLevel) || '—'),
+    'Affected users: ' + (text(facts.affectedUsers) || '—'),
+    'Affected entities: ' + (text(facts.affectedEntities) || '—'),
+    'Management zone: ' + scope,
+    '§Evidence Coverage',
+    'Correlated events: ' + String(result.evidenceSummary.correlatedEvents) + ' | Incident logs: ' + String(result.evidenceSummary.incidentLogs) + ' | Timeline snapshots: ' + String(result.evidenceSummary.timelineSnapshots),
+  ];
+  for (const [title, keys] of sections) {
+    all.push('§' + title);
+    all.push(...wrap(section(result.analysis, keys) || 'Not available from retrieved evidence.'));
+  }
+  all.push('§Past Occurrence Detail');
+  for (const occurrence of result.occurrences.slice(0, 60)) all.push(...wrap(occurrence.problemId + ' | ' + dateText(occurrence.start) + ' | ' + occurrence.title + ' | ' + occurrence.status + ' | Sev ' + occurrence.severity + ' | ' + occurrence.duration, 94));
+  all.push('§Governance');
+  all.push(...wrap('Dynatrace telemetry is treated as observed evidence. AI-generated interpretation and recommended actions require SRE/application validation before closure.'));
+
+  const pages: string[][] = [];
+  let current: string[] = [];
+  let used = 0;
+  for (const line of all) {
+    const cost = line.startsWith('§') ? 2 : 1;
+    if (used + cost > 55 && current.length) { pages.push(current); current = []; used = 0; }
+    current.push(line); used += cost;
+  }
+  if (current.length) pages.push(current);
+
+  const objects: string[] = [];
+  const pageIds: number[] = [];
+  const font1 = 3;
+  const font2 = 4;
+  objects.push('<< /Type /Catalog /Pages 2 0 R >>');
+  const kids = pages.map((_, index) => String(5 + index * 2) + ' 0 R').join(' ');
+  objects.push('<< /Type /Pages /Kids [' + kids + '] /Count ' + String(pages.length) + ' >>');
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  objects.push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>');
+  for (let i = 0; i < pages.length; i += 1) {
+    const pageObject = 5 + i * 2;
+    const streamObject = pageObject + 1;
+    pageIds.push(pageObject);
+    const stream = pdfPage(pages[i], i + 1, 'Axis Bank | Incident RCA');
+    objects.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ' + String(font1) + ' 0 R /F2 ' + String(font2) + ' 0 R >> >> /Contents ' + String(streamObject) + ' 0 R >>');
+    objects.push('<< /Length ' + String(stream.length) + ' >>\nstream\n' + stream + '\nendstream');
+  }
+  let pdf = '%PDF-1.4\n%AXIS\n';
+  const offsets: number[] = [0];
+  for (let i = 0; i < objects.length; i += 1) {
+    offsets.push(pdf.length);
+    pdf += String(i + 1) + ' 0 obj\n' + objects[i] + '\nendobj\n';
+  }
+  const xref = pdf.length;
+  pdf += 'xref\n0 ' + String(objects.length + 1) + '\n0000000000 65535 f \n';
+  for (let i = 1; i <= objects.length; i += 1) pdf += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
+  pdf += 'trailer\n<< /Size ' + String(objects.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + String(xref) + '\n%%EOF';
+  return new Blob([pdf], { type: 'application/pdf' });
+}
+
+export function downloadCioRcaPdf(result: CioRcaResult): void {
+  const blob = buildCioRcaPdf(result);
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = 'Axis-CIO-RCA-' + result.problemId + '.pdf';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function downloadCioRca(html: string): void {
