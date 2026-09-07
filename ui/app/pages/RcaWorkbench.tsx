@@ -1,64 +1,108 @@
-import React, { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import './RcaWorkbench.css';
-import { buildCioRcaHtml, downloadCioRca } from './RcaWorkbenchReport';
+import { buildCioRcaHtml, downloadCioRca, downloadCioRcaPdf } from './RcaWorkbenchReport';
 
 type Occurrence = { problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string };
 type ProblemFacts = { title?: string; status?: string; severity?: string; category?: string; start?: string; end?: string; duration?: string; impactLevel?: string; affectedUsers?: string | number; affectedEntities?: string | number };
-type Result = { problemId: string; nativeRootCauseEntity: string | null; analysis: string; generatedAt: string; occurrenceCount: number; occurrences: Occurrence[]; managementZones?: string[]; recurrenceWindow?: string; evidenceSummary: { correlatedEvents: number; incidentLogs: number; historicalOccurrences: number; timelineSnapshots: number }; problemFacts?: ProblemFacts };
-
-type InputChangeEvent = { target: { value: string } };
-
+type Result = { problemId: string; nativeRootCauseEntity: string | null; definitiveRootCause?: boolean; analysis: string; generatedAt: string; occurrenceCount: number; occurrences: Occurrence[]; managementZones?: string[]; recurrenceWindow?: string; evidenceSummary: { correlatedEvents: number; incidentLogs: number; historicalOccurrences: number; timelineSnapshots: number }; problemFacts?: ProblemFacts };
 type JsonObject = Record<string, unknown>;
-const asText = (value: unknown): string => {
-  if (value == null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
-  return JSON.stringify(value) ?? '';
+
+const dateText = (value?: string): string => { if (!value) return '—'; const d = new Date(value); return Number.isFinite(d.getTime()) ? d.toLocaleString() : value; };
+const parseAnalysis = (analysis: string): Array<{ title: string; body: string }> => {
+  const lines = analysis.split(/\r?\n/); const sections: Array<{ title: string; body: string }> = []; let current: { title: string; body: string } | null = null;
+  for (const line of lines) { const match = line.match(/^\s*#{1,6}\s+(.+?)\s*$/); if (match) { if (current && current.body.trim()) sections.push({ title: current.title, body: current.body.trim() }); current = { title: (match[1] ?? '').replace(/[*_]/g, ''), body: '' }; } else if (current) current.body += (current.body ? '\n' : '') + line; }
+  if (current && current.body.trim()) sections.push({ title: current.title, body: current.body.trim() });
+  return sections.length ? sections : [{ title: 'Davis Assist Analysis', body: analysis }];
 };
-const csvCell = (value: unknown): string => '"' + asText(value).replace(/"/g, '""') + '"';
-const dateText = (value: string): string => { const d = new Date(value); return Number.isFinite(d.getTime()) ? d.toLocaleString() : value || '—'; };
-const downloadBlob = (content: string, type: string, filename: string): void => { const url = URL.createObjectURL(new Blob([content], { type })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; document.body.appendChild(anchor); anchor.click(); anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); };
-function downloadRcaExcel(result: Result): void { const head = ['Problem ID','Native Root Cause','Recurrence Window','Management Zone Scope','Past Occurrences','Correlated Events','Incident Logs','Timeline Snapshots','RCA']; const summary = [result.problemId,result.nativeRootCauseEntity || 'Not proven',result.recurrenceWindow || 'Last 30 days',(result.managementZones ?? []).join('; ') || 'Not derived',result.occurrenceCount,result.evidenceSummary.correlatedEvents,result.evidenceSummary.incidentLogs,result.evidenceSummary.timelineSnapshots,result.analysis]; const occurrenceHead = ['Problem ID','Title','Status','Severity','Started','Ended','Duration']; const occurrenceRows = result.occurrences.map((o) => [o.problemId,o.title,o.status,o.severity,o.start,o.end,o.duration].map(csvCell).join(',')); const csv = '\uFEFF' + [head.map(csvCell).join(','),summary.map(csvCell).join(','),'',occurrenceHead.map(csvCell).join(','),...occurrenceRows].join('\r\n'); downloadBlob(csv,'application/vnd.ms-excel;charset=utf-8','axis-rca-' + result.problemId + '.xls'); }
-const parseAnalysis = (analysis: string): Array<{ title: string; body: string }> => { const lines = analysis.split(/\r?\n/); const sections: Array<{ title: string; body: string }> = []; let current: { title: string; body: string } | null = null; for (const line of lines) { const match = line.match(/^\s*#{1,6}\s+(.+?)\s*$/); if (match) { if (current && current.body.trim()) sections.push({ title: current.title, body: current.body.trim() }); const title = typeof match[1] === 'string' ? match[1] : ''; current = { title: title.replace(/[*_]/g, ''), body: '' }; } else if (current) current.body += (current.body ? '\n' : '') + line; } if (current && current.body.trim()) sections.push({ title: current.title, body: current.body.trim() }); return sections.length ? sections : [{ title: 'Davis Assist Analysis', body: analysis }]; };
+const getSection = (sections: Array<{ title: string; body: string }>, name: string): string => sections.find((item) => item.title.toLowerCase().includes(name.toLowerCase()))?.body ?? '';
+const confidence = (analysis: string): string => { const match = analysis.match(/confidence(?: level)?\s*[:\-]\s*([A-Za-z]+(?:\s*\/\s*[A-Za-z]+)?(?:\s*\(\s*\d+%\s*\))?)/i); return match?.[1] ?? 'Evidence based'; };
+const downloadExcel = (result: Result): void => {
+  const cell = (value: unknown): string => '"' + String(value ?? '').replace(/"/g, '""') + '"';
+  const rows = [
+    ['Problem ID', 'Title', 'Status', 'Severity', 'Duration', 'Root Cause Entity', 'Management Zone', 'Past Occurrences'],
+    [result.problemId, result.problemFacts?.title, result.problemFacts?.status, result.problemFacts?.severity, result.problemFacts?.duration, result.nativeRootCauseEntity ?? 'Not proven', (result.managementZones ?? []).join('; '), result.occurrenceCount],
+    [], ['Problem ID', 'Started', 'Title', 'Status', 'Severity', 'Duration'],
+    ...result.occurrences.map((o) => [o.problemId, o.start, o.title, o.status, o.severity, o.duration]),
+  ];
+  const csv = '\uFEFF' + rows.map((row) => row.map(cell).join(',')).join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'application/vnd.ms-excel;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'Axis-RCA-' + result.problemId + '.xls'; document.body.appendChild(anchor); anchor.click(); anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
 
 export function RcaWorkbench(): React.JSX.Element {
   const navigate = useNavigate();
-  const [problemId, setProblemId] = useState<string>('');
+  const [searchParams] = useSearchParams();
+  const [problemId, setProblemId] = useState<string>(searchParams.get('problemId') ?? '');
   const [data, setData] = useState<Result | null>(null);
-  const [busy, setBusy] = useState<boolean>(false);
-  const [error, setError] = useState<string>('');
-  const [showOccurrences, setShowOccurrences] = useState<boolean>(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [showOccurrences, setShowOccurrences] = useState(false);
+  const [activeSection, setActiveSection] = useState('Executive Summary');
   const sections = useMemo(() => data ? parseAnalysis(data.analysis) : [], [data]);
   const facts = data?.problemFacts;
   const scope = (data?.managementZones ?? []).join(', ') || 'Management zone not derived';
-  const handleInputChange = (event: InputChangeEvent): void => setProblemId(event.target.value);
-  const analyze = async (): Promise<void> => {
-    const id = problemId;
-    if (typeof id !== 'string' || id.length === 0) return;
-    const normalizedId = id.replace(/^\s+|\s+$/g, '');
-    if (normalizedId.length === 0) return;
-    setBusy(true); setError('');
+
+  const analyze = async (requestedId = problemId): Promise<void> => {
+    const id = requestedId.trim(); if (!id) return;
+    setProblemId(id); setBusy(true); setError('');
     try {
-      const request = await fetch('/api/analyzeProblemRca', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ problemId: normalizedId }) });
-      if (!request.ok) throw new Error('RCA request failed with HTTP ' + String(request.status));
-      const jsonResponse: unknown = await request.json();
-      if (!jsonResponse || typeof jsonResponse !== 'object' || Array.isArray(jsonResponse)) throw new Error('RCA response was empty or invalid.');
-      setData(jsonResponse as JsonObject as Result);
+      const response = await fetch('/api/analyzeProblemRca', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ problemId: id }) });
+      if (!response.ok) throw new Error('RCA request failed with HTTP ' + String(response.status));
+      const payload: unknown = await response.json();
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('RCA response was empty or invalid.');
+      setData(payload as JsonObject as Result); setActiveSection('Executive Summary');
     } catch (cause: unknown) { setError(cause instanceof Error ? cause.message : 'RCA analysis failed'); }
     finally { setBusy(false); }
   };
-  const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>): void => { if (event.key === 'Enter') void analyze(); };
-  const handleReport = (): void => { if (data) downloadCioRca(buildCioRcaHtml(data)); };
-  const hasProblemId = problemId.length > 0;
+
+  useEffect(() => { const requested = searchParams.get('problemId'); if (requested && requested !== data?.problemId) void analyze(requested); }, [searchParams]);
+
+  const rootCause = data?.nativeRootCauseEntity || 'Not identified by Davis';
+  const rootCauseState = data?.nativeRootCauseEntity ? 'Davis identified a root-cause entity' : 'Davis did not expose a definitive root-cause entity';
+  const executive = getSection(sections, 'Executive Summary') || 'Generate an RCA to retrieve the evidence-backed executive summary.';
+  const rootAssessment = getSection(sections, 'Root Cause Assessment');
+  const timeline = getSection(sections, 'Incident Timeline');
+  const impact = getSection(sections, 'Impact Assessment');
+
   return <main className="rca-page"><div className="rca-shell">
-    <header className="rca-topbar"><div><div className="rca-eyebrow">Dynatrace Davis + Assist</div><h1 className="rca-title">Root Cause &amp; Incident Intelligence</h1><p className="rca-subtitle">Evidence-backed incident analysis, recurrence intelligence and CIO-ready RCA reporting.</p></div><button className="rca-back" type="button" onClick={() => navigate('/')}>Back to overview</button></header>
-    <section className="rca-input-card"><label className="rca-field"><span className="rca-label">Dynatrace Problem ID</span><input className="rca-input" value={problemId} onChange={handleInputChange} placeholder="e.g. P-260933994" onKeyDown={handleKeyDown} /></label><button className="rca-primary" type="button" disabled={busy || !hasProblemId} onClick={() => { void analyze(); }}>{busy ? 'Collecting evidence…' : 'Generate RCA'}</button></section>
+    <header className="rca-header">
+      <div><div className="rca-brand">AXIS BANK <span>•</span> DYNATRACE OPERATIONS</div><div className="rca-eyebrow">Davis Intelligence Workspace</div><h1>Incident Root Cause Analysis</h1><p>Turn a Dynatrace Problem into an evidence-backed RCA, recurrence view and CIO-ready report.</p></div>
+      <div className="rca-header-actions"><button type="button" className="rca-secondary" onClick={() => navigate('/')}>← Problem Intelligence</button>{data && <button type="button" className="rca-pdf" onClick={() => downloadCioRcaPdf(data)}>↓ Download CIO-ready PDF</button>}</div>
+    </header>
+
+    <section className="rca-search"><div><label htmlFor="problem-id">Dynatrace Problem ID</label><input id="problem-id" value={problemId} onChange={(event) => setProblemId(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void analyze(); }} placeholder="P-260931557" /></div><button type="button" className="rca-generate" disabled={busy || !problemId.trim()} onClick={() => { void analyze(); }}>{busy ? 'Analysing Davis evidence…' : 'Generate RCA'}</button><div className="rca-search-hint">Evidence window: 365d telemetry · recurrence: <b>30d + Management Zone</b></div></section>
+
     {error && <div className="rca-error">{error}</div>}
-    {data && <section className="rca-result"><div className="rca-hero"><div className="rca-hero-kicker">AI-assisted incident analysis</div><div className="rca-hero-title">{facts?.title || 'Davis Problem ' + data.problemId}</div><div className="rca-hero-meta">{data.problemId} · Generated {dateText(data.generatedAt)}</div><div className="rca-actions"><button className="rca-action" type="button" onClick={() => setShowOccurrences(true)}>View {data.occurrenceCount} past occurrences</button><button className="rca-action" type="button" onClick={handleReport}>Download CIO-ready RCA</button><button className="rca-action" type="button" onClick={() => downloadRcaExcel(data)}>Export RCA Excel</button></div></div>
-      <div className="rca-metrics">{[['Status',facts?.status || '—'],['Severity',facts?.severity || '—'],['Category',facts?.category || '—'],['Duration',facts?.duration || '—'],['Root-cause entity',data.nativeRootCauseEntity || 'Not proven'],['Management zone',scope]].map(([label,value]) => <div className="rca-metric" key={label}><div className="rca-metric-label">{label}</div><div className="rca-metric-value" title={value}>{value}</div></div>)}</div>
-      <div className="rca-grid"><section className="rca-panel"><div className="rca-panel-head"><span className="rca-panel-title">AI-generated RCA</span><span className="rca-panel-note">Evidence-backed · Davis problem telemetry</span></div><div className="rca-analysis">{sections.map((section,index)=><article className="rca-section" key={section.title + index}><h2 className="rca-section-title">{section.title}</h2><div className="rca-section-body">{section.body}</div></article>)}</div></section><aside className="rca-panel"><div className="rca-panel-head"><span className="rca-panel-title">Incident facts</span><span className="rca-panel-note">Retrieved evidence</span></div><div className="rca-facts"><div className="rca-fact"><span>Started</span><strong>{facts?.start ? dateText(facts.start) : 'Not available'}</strong></div><div className="rca-fact"><span>Ended</span><strong>{facts?.end ? dateText(facts.end) : 'Not available'}</strong></div><div className="rca-fact"><span>Impact level</span><strong>{facts?.impactLevel || 'Not available'}</strong></div><div className="rca-fact"><span>Affected users</span><strong>{facts?.affectedUsers ?? 'Not available'}</strong></div><div className="rca-fact"><span>Affected entities</span><strong>{facts?.affectedEntities ?? 'Not available'}</strong></div><div className="rca-fact"><span>Recurrence window</span><strong>{data.recurrenceWindow || 'Last 30 days'}</strong></div><div className="rca-fact"><span>Historical records</span><strong>{data.occurrenceCount}</strong></div><div className="rca-fact"><span>Correlated events</span><strong>{data.evidenceSummary.correlatedEvents}</strong></div><div className="rca-fact"><span>Incident logs</span><strong>{data.evidenceSummary.incidentLogs}</strong></div><div className="rca-fact"><span>Timeline snapshots</span><strong>{data.evidenceSummary.timelineSnapshots}</strong></div></div></aside></div>
-    </section>}
-    {showOccurrences && data && <div className="rca-modal-backdrop" role="presentation" onMouseDown={(event)=>{if(event.target===event.currentTarget)setShowOccurrences(false)}}><section className="rca-modal" role="dialog" aria-modal="true" aria-label="Past occurrences"><div className="rca-modal-head"><div><div className="rca-modal-title">Past occurrences · {data.occurrenceCount}</div><div className="rca-panel-note">{data.recurrenceWindow || 'Last 30 days'} · scope: {scope}</div></div><button className="rca-close" type="button" onClick={()=>setShowOccurrences(false)}>Close</button></div><div className="rca-modal-info">Showing {data.occurrences.length} retrieved records. The occurrence count is authoritative; the table is a returned sample.</div><div className="rca-table-wrap"><table className="rca-table"><thead><tr>{['Problem ID','Started','Title','Status','Severity','Duration'].map((h)=><th key={h}>{h}</th>)}</tr></thead><tbody>{data.occurrences.map((o)=><tr key={o.problemId}><td><strong>{o.problemId}</strong></td><td>{dateText(o.start)}</td><td>{o.title}</td><td>{o.status}</td><td>{o.severity}</td><td>{o.duration}</td></tr>)}</tbody></table></div></section></div>}
+
+    {!data && !busy && <section className="rca-empty"><div className="rca-empty-icon">✦</div><h2>Start with a Dynatrace Problem</h2><p>Enter a Problem ID to retrieve Davis root-cause evidence, incident timeline, recurrence patterns, impact and remediation actions.</p></section>}
+    {busy && <section className="rca-loading"><div className="rca-spinner"/><div><strong>Building incident intelligence</strong><p>Retrieving Davis problem, correlated events, logs, snapshots and 30-day recurrence evidence…</p></div></section>}
+
+    {data && !busy && <>
+      <section className="rca-hero">
+        <div className="rca-hero-main"><div className="rca-status">{String(facts?.status ?? 'UNKNOWN').toUpperCase()} <span>•</span> SEVERITY {facts?.severity ?? '—'}</div><h2>{facts?.title || 'Dynatrace Problem ' + data.problemId}</h2><div className="rca-problem-id">{data.problemId} · Started {dateText(facts?.start)}</div><div className="rca-hero-summary">{executive.split('\n').slice(0, 5).join(' ')}</div></div>
+        <div className="rca-hero-score"><div className="rca-score-label">RCA CONFIDENCE</div><div className="rca-score-value">{confidence(data.analysis)}</div><div className="rca-score-note">Based on retrieved Davis evidence</div></div>
+      </section>
+
+      <section className="rca-kpis">
+        <div className="rca-kpi"><span>ROOT CAUSE</span><strong className={data.nativeRootCauseEntity ? 'positive' : 'neutral'}>{rootCause}</strong><small>{rootCauseState}</small></div>
+        <div className="rca-kpi"><span>RECURRENCE</span><strong>{data.occurrenceCount.toLocaleString()}</strong><small>matching occurrences · last 30d</small></div>
+        <div className="rca-kpi"><span>MANAGEMENT ZONE</span><strong>{scope}</strong><small>authoritative recurrence scope</small></div>
+        <div className="rca-kpi"><span>EVIDENCE</span><strong>{data.evidenceSummary.correlatedEvents + data.evidenceSummary.incidentLogs + data.evidenceSummary.timelineSnapshots}</strong><small>{data.evidenceSummary.correlatedEvents} events · {data.evidenceSummary.incidentLogs} logs · {data.evidenceSummary.timelineSnapshots} snapshots</small></div>
+      </section>
+
+      <section className="rca-insight-grid">
+        <article className="rca-insight rca-insight-primary"><div className="rca-card-kicker">PRIMARY FINDING</div><h3>{rootCauseState}</h3><p>{rootAssessment || executive}</p></article>
+        <article className="rca-insight"><div className="rca-card-kicker">IMPACT</div><h3>{facts?.impactLevel || 'Not available'}</h3><p>{impact || 'Impact assessment is contained in the generated RCA.'}</p></article>
+        <article className="rca-insight"><div className="rca-card-kicker">INCIDENT WINDOW</div><h3>{facts?.duration || 'Not available'}</h3><p>{timeline || 'Timeline evidence is contained in the generated RCA.'}</p></article>
+      </section>
+
+      <section className="rca-workspace">
+        <aside className="rca-nav"><div className="rca-nav-title">RCA REPORT</div>{sections.map((item, index) => <button type="button" key={item.title + index} className={activeSection === item.title ? 'active' : ''} onClick={() => setActiveSection(item.title)}><span>{String(index + 1).padStart(2, '0')}</span>{item.title}</button>)}<div className="rca-nav-divider"/><button type="button" className="rca-occurrence-link" onClick={() => setShowOccurrences(true)}>↗ View {data.occurrenceCount.toLocaleString()} past occurrences</button></aside>
+        <article className="rca-report-panel"><div className="rca-report-head"><div><div className="rca-card-kicker">AI-GENERATED RCA</div><h3>{activeSection}</h3></div><div className="rca-report-actions"><button type="button" onClick={() => downloadCioRcaPdf(data)}>PDF</button><button type="button" onClick={() => downloadCioRca(buildCioRcaHtml(data))}>HTML</button><button type="button" onClick={() => downloadExcel(data)}>Excel</button></div></div><div className="rca-report-body">{(getSection(sections, activeSection) || 'Not available from retrieved evidence.').split('\n').map((line, index) => <p key={index}>{line || ' '}</p>)}</div></article>
+      </section>
+    </>}
+
+    {showOccurrences && data && <div className="rca-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowOccurrences(false); }}><section className="rca-modal" role="dialog" aria-modal="true" aria-label="Past occurrences"><header><div><div className="rca-card-kicker">RECURRENCE INTELLIGENCE</div><h3>{data.occurrenceCount.toLocaleString()} Past Occurrences</h3><p>{data.recurrenceWindow || '30d'} · {scope}</p></div><button type="button" onClick={() => setShowOccurrences(false)}>Close</button></header><div className="rca-modal-note">Authoritative count: {data.occurrenceCount.toLocaleString()}. The table below is the returned detail sample.</div><div className="rca-table-wrap"><table><thead><tr><th>Problem</th><th>Started</th><th>Title</th><th>Status</th><th>Severity</th><th>Duration</th></tr></thead><tbody>{data.occurrences.map((o) => <tr key={o.problemId}><td><b>{o.problemId}</b></td><td>{dateText(o.start)}</td><td>{o.title}</td><td>{o.status}</td><td>{o.severity}</td><td>{o.duration}</td></tr>)}</tbody></table></div></section></div>}
   </div></main>;
 }
