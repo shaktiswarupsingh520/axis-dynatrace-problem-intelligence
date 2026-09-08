@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Flex } from '@dynatrace/strato-components/layouts';
+import { useAppFunction } from '@dynatrace-sdk/react-hooks';
 import type { Problem, ProblemsResponse } from '../types/problems';
 import { downloadCioRcaPdf, type CioRcaResult } from './RcaWorkbenchReport';
 import './Home.css';
