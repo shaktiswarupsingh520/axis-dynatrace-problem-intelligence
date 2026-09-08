@@ -1,9 +1,6 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useAppFunction } from '@dynatrace-sdk/react-hooks';
 import { useNavigate } from 'react-router-dom';
 import { Flex } from '@dynatrace/strato-components/layouts';
-import { Heading, Paragraph } from '@dynatrace/strato-components/typography';
 import type { Problem, ProblemsResponse } from '../types/problems';
 import { downloadCioRcaPdf, type CioRcaResult } from './RcaWorkbenchReport';
 import './Home.css';
@@ -14,7 +11,7 @@ const upper = (value?: string) => (value ?? '').toUpperCase();
 const formatTimestamp = (timestamp?: number) => timestamp ? new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(timestamp)) : '—';
 const formatDuration = (start?: number, end?: number) => { if (!start) return '—'; const ms = Math.max(0, (end && end > 0 ? end : Date.now()) - start); const mins = Math.floor(ms / 60000); const days = Math.floor(mins / 1440); const hours = Math.floor((mins % 1440) / 60); const rest = mins % 60; return days ? `${days}d ${hours}h` : hours ? `${hours}h ${rest}m` : `${rest}m`; };
 const section = (analysis: string, title: string): string => { const lines = analysis.split(/\r?\n/); const index = lines.findIndex((line) => line.toLowerCase().includes(title.toLowerCase())); if (index < 0) return ''; const out: string[] = []; for (let i = index + 1; i < lines.length; i += 1) { if (/^\s*#{1,6}\s+/.test(lines[i])) break; if (lines[i].trim()) out.push(lines[i].trim()); } return out.join(' '); };
-const confidence = (analysis: string): string => { const match = analysis.match(/confidence(?: level)?\s*[:\-]\s*([A-Za-z]+(?:\s*\/\s*[A-Za-z]+)?(?:\s*\(\s*\d+%\s*\))?)/i); return match?.[1] ?? 'Evidence based'; };
+const confidence = (analysis: string): string => { const match = analysis.match(/confidence(?: level)?\s*[:-]\s*([A-Za-z]+(?:\s*\/\s*[A-Za-z]+)?(?:\s*\(\s*\d+%\s*\))?)/i); return match?.[1] ?? 'Evidence based'; };
 const speakProblem = (problem: Problem) => { if (!('speechSynthesis' in window)) return; window.speechSynthesis.cancel(); window.speechSynthesis.speak(new SpeechSynthesisUtterance(`Attention. New Dynatrace alert. ${problem.title || 'New problem alert'}.`)); };
 export const Home = () => {
   const navigate = useNavigate(); const [selectedMz, setSelectedMz] = useState('ALL'); const [selectedProblem, setSelectedProblem] = useState<Problem | null>(null); const [rca, setRca] = useState<RcaPreview | null>(null); const [rcaBusy, setRcaBusy] = useState(false); const [rcaError, setRcaError] = useState(''); const [voiceEnabled, setVoiceEnabled] = useState(false); const [lastRefresh, setLastRefresh] = useState(Date.now()); const knownProblemIds = useRef(new Set<string>()); const initialised = useRef(false);
