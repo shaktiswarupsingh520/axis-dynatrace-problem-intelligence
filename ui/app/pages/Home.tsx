@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-return */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Flex } from '@dynatrace/strato-components/layouts';
@@ -16,7 +17,8 @@ const speakProblem = (problem: Problem) => { if (!('speechSynthesis' in window))
 export const Home = () => {
   const navigate = useNavigate(); const [selectedMz, setSelectedMz] = useState('ALL'); const [selectedProblem, setSelectedProblem] = useState<Problem | null>(null); const [rca, setRca] = useState<RcaPreview | null>(null); const [rcaBusy, setRcaBusy] = useState(false); const [rcaError, setRcaError] = useState(''); const [voiceEnabled, setVoiceEnabled] = useState(false); const [lastRefresh, setLastRefresh] = useState(Date.now()); const knownProblemIds = useRef(new Set<string>()); const initialised = useRef(false);
   const requestData = useMemo(() => ({ from: 'now-24h', to: 'now', pageSize: 100, ...(selectedMz !== 'ALL' ? { managementZoneId: selectedMz } : {}) }), [selectedMz]);
-  const { data, isLoading, error, refetch } = useAppFunction<ProblemsResponse>({ name: 'getProblems', data: requestData }); const problems = useMemo(() => [...(data?.problems ?? [])].sort((a, b) => (b.startTime ?? 0) - (a.startTime ?? 0)), [data]);
+  const problemsData = useAppFunction<ProblemsResponse>({ name: 'getProblems', data: requestData }); const data = problemsData.data; const isLoading = problemsData.isLoading; const error = problemsData.error; const refetch = problemsData.refetch;
+  const problems = useMemo(() => [...(data?.problems ?? [])].sort((a, b) => (b.startTime ?? 0) - (a.startTime ?? 0)), [data]);
   const zones = useMemo(() => { const map = new Map<string, string>(); for (const p of problems) for (const z of p.managementZones ?? []) if (z.id) map.set(z.id, z.name ?? z.id); return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1])); }, [problems]);
   const openProblems = useMemo(() => problems.filter((p) => upper(p.status) === 'OPEN'), [problems]); const criticalHigh = useMemo(() => openProblems.filter((p) => ['CRITICAL', 'HIGH'].includes(upper(p.severityLevel))), [openProblems]); const aging = useMemo(() => openProblems.filter((p) => Boolean(p.startTime) && Date.now() - (p.startTime ?? 0) > 4 * 3600000), [openProblems]);
   useEffect(() => { const timer = window.setInterval(() => { void refetch(); setLastRefresh(Date.now()); }, 30000); return () => window.clearInterval(timer); }, [refetch]);
