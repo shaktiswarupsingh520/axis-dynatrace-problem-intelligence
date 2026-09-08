@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment */
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import './RcaWorkbench.css';
@@ -7,8 +6,8 @@ import { buildCioRcaHtml, downloadCioRca, downloadCioRcaPdf } from './RcaWorkben
 type Occurrence = { problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string };
 type ProblemFacts = { title?: string; status?: string; severity?: string; category?: string; start?: string; end?: string; duration?: string; impactLevel?: string; affectedUsers?: string | number; affectedEntities?: string | number };
 type Result = { problemId: string; nativeRootCauseEntity: string | null; definitiveRootCause?: boolean; analysis: string; generatedAt: string; occurrenceCount: number; occurrences: Occurrence[]; managementZones?: string[]; recurrenceWindow?: string; evidenceSummary: { correlatedEvents: number; incidentLogs: number; historicalOccurrences: number; timelineSnapshots: number }; problemFacts?: ProblemFacts };
-type JsonObject = Record<string, unknown>;
 
+const asText = (value: unknown): string => { if (value == null) return ''; if (typeof value === 'string') return value; if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value); if (Array.isArray(value)) return value.map(asText).filter(Boolean).join(', '); return JSON.stringify(value) ?? ''; };
 const dateText = (value?: string): string => { if (!value) return '—'; const d = new Date(value); return Number.isFinite(d.getTime()) ? d.toLocaleString() : value; };
 const parseAnalysis = (analysis: string): Array<{ title: string; body: string }> => {
   const lines = analysis.split(/\r?\n/); const sections: Array<{ title: string; body: string }> = []; let current: { title: string; body: string } | null = null;
@@ -17,9 +16,9 @@ const parseAnalysis = (analysis: string): Array<{ title: string; body: string }>
   return sections.length ? sections : [{ title: 'Davis Assist Analysis', body: analysis }];
 };
 const getSection = (sections: Array<{ title: string; body: string }>, name: string): string => sections.find((item) => item.title.toLowerCase().includes(name.toLowerCase()))?.body ?? '';
-const confidence = (analysis: string): string => { const match = analysis.match(/confidence(?: level)?\s*[:\-]\s*([A-Za-z]+(?:\s*\/\s*[A-Za-z]+)?(?:\s*\(\s*\d+%\s*\))?)/i); return match?.[1] ?? 'Evidence based'; };
+const confidence = (analysis: string): string => { const match = analysis.match(/confidence(?: level)?\s*[:-]\s*([A-Za-z]+(?:\s*\/\s*[A-Za-z]+)?(?:\s*\(\s*\d+%\s*\))?)/i); return match?.[1] ?? 'Evidence based'; };
 const downloadExcel = (result: Result): void => {
-  const cell = (value: unknown): string => '"' + String(value ?? '').replace(/"/g, '""') + '"';
+  const cell = (value: unknown): string => '"' + asText(value).replace(/"/g, '""') + '"';
   const rows = [
     ['Problem ID', 'Title', 'Status', 'Severity', 'Duration', 'Root Cause Entity', 'Management Zone', 'Past Occurrences'],
     [result.problemId, result.problemFacts?.title, result.problemFacts?.status, result.problemFacts?.severity, result.problemFacts?.duration, result.nativeRootCauseEntity ?? 'Not proven', (result.managementZones ?? []).join('; '), result.occurrenceCount],
@@ -44,7 +43,7 @@ export function RcaWorkbench(): React.JSX.Element {
   const scope = (data?.managementZones ?? []).join(', ') || 'Management zone not derived';
 
   const analyze = async (requestedId = problemId): Promise<void> => {
-    const id = requestedId.trim(); if (!id) return;
+    const id = asText(requestedId).trim(); if (!id) return;
     setProblemId(id); setBusy(true); setError('');
     try {
       const response = await fetch('/api/analyzeProblemRca', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ problemId: id }) });
@@ -56,7 +55,7 @@ export function RcaWorkbench(): React.JSX.Element {
     finally { setBusy(false); }
   };
 
-  useEffect(() => { const requested = searchParams.get('problemId'); if (requested && requested !== data?.problemId) void analyze(requested); }, [searchParams]);
+  useEffect(() => { const requested = searchParams.get('problemId'); if (requested && requested !== data?.problemId) void analyze(requested); }, [searchParams, data?.problemId, analyze]);
 
   const rootCause = data?.nativeRootCauseEntity || 'Not identified by Davis';
   const rootCauseState = data?.nativeRootCauseEntity ? 'Davis identified a root-cause entity' : 'Davis did not expose a definitive root-cause entity';
@@ -71,7 +70,7 @@ export function RcaWorkbench(): React.JSX.Element {
       <div className="rca-header-actions"><button type="button" className="rca-secondary" onClick={() => navigate('/')}>← Problem Intelligence</button>{data && <button type="button" className="rca-pdf" onClick={() => downloadCioRcaPdf(data)}>↓ Download CIO-ready PDF</button>}</div>
     </header>
 
-    <section className="rca-search"><div><label htmlFor="problem-id">Dynatrace Problem ID</label><input id="problem-id" value={problemId} onChange={(event) => setProblemId(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void analyze(); }} placeholder="P-260931557" /></div><button type="button" className="rca-generate" disabled={busy || !problemId.trim()} onClick={() => { void analyze(); }}>{busy ? 'Analysing Davis evidence…' : 'Generate RCA'}</button><div className="rca-search-hint">Evidence window: 365d telemetry · recurrence: <b>30d + Management Zone</b></div></section>
+    <section className="rca-search"><div><label htmlFor="problem-id">Dynatrace Problem ID</label><input id="problem-id" value={problemId} onChange={(event) => setProblemId(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void analyze(); }} placeholder="P-260931557" /></div><button type="button" className="rca-generate" disabled={busy || !asText(problemId).trim()} onClick={() => { void analyze(); }}>{busy ? 'Analysing Davis evidence…' : 'Generate RCA'}</button><div className="rca-search-hint">Evidence window: 365d telemetry · recurrence: <b>30d + Management Zone</b></div></section>
 
     {error && <div className="rca-error">{error}</div>}
 
