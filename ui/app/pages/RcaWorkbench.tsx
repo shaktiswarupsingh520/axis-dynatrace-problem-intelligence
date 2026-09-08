@@ -19,7 +19,7 @@ const parseAnalysis = (analysis: string): Array<{ title: string; body: string }>
 const getSection = (sections: Array<{ title: string; body: string }>, name: string): string => sections.find((item) => item.title.toLowerCase().includes(name.toLowerCase()))?.body ?? '';
 const confidence = (analysis: string): string => { const match = analysis.match(/confidence(?: level)?\s*[:-]\s*([A-Za-z]+(?:\s*\/\s*[A-Za-z]+)?(?:\s*\(\s*\d+%\s*\))?)/i); return match?.[1] ?? 'Evidence based'; };
 const downloadExcel = (result: Result): void => {
-  const cell = (value: unknown): string => '\"' + asText(value).replace(/\"/g, '\"\"') + '\"';
+  const cell = (value: unknown): string => '"' + asText(value).replace(/"/g, '""') + '"';
   const rows = [['Problem ID', 'Title', 'Status', 'Severity', 'Duration', 'Root Cause Entity', 'Management Zone', 'Past Occurrences'], [result.problemId, result.problemFacts?.title, result.problemFacts?.status, result.problemFacts?.severity, result.problemFacts?.duration, result.nativeRootCauseEntity ?? 'Not proven', (result.managementZones ?? []).join('; '), result.occurrenceCount], [], ['Problem ID', 'Started', 'Title', 'Status', 'Severity', 'Duration'], ...result.occurrences.map((o) => [o.problemId, o.start, o.title, o.status, o.severity, o.duration])];
   const csv = '\uFEFF' + rows.map((row) => row.map(cell).join(',')).join('\r\n'); const url = URL.createObjectURL(new Blob([csv], { type: 'application/vnd.ms-excel;charset=utf-8' })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'Axis-RCA-' + result.problemId + '.xls'; document.body.appendChild(anchor); anchor.click(); anchor.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
