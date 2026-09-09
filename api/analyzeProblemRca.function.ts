@@ -56,15 +56,10 @@ function findValue(value: unknown, keys: string[], seen = new Set<object>()): st
 
 async function boundedDql(query: string, max = 50): Promise<Row[]> {
   try {
-    const response = await queryExecutionClient.queryExecute({
-      body: { query, requestTimeoutMilliseconds: 3000, maxResultRecords: max },
-    });
+    const response = await queryExecutionClient.queryExecute({ body: { query, requestTimeoutMilliseconds: 3000, maxResultRecords: max } });
     if (response.result) return normalizeRows(response.result.records);
     if (response.requestToken) {
-      const poll = await queryExecutionClient.queryPoll({
-        requestToken: response.requestToken,
-        requestTimeoutMilliseconds: 2500,
-      });
+      const poll = await queryExecutionClient.queryPoll({ requestToken: response.requestToken, requestTimeoutMilliseconds: 2500 });
       return normalizeRows(poll.result?.records);
     }
   } catch (error) {
@@ -124,9 +119,7 @@ async function loadEvidence(id: string): Promise<Evidence> {
   const title = text(problem['event.name']);
   const affected = text(problem.affected_entity_names);
   const names = affected.split(';').map((x) => x.trim()).filter(Boolean).slice(0, 20);
-  const entityFilter = names.length
-    ? `| filter in(dt.source_entity,array(${names.map((x) => `"${q(x)}"`).join(',')}))`
-    : '';
+  const entityFilter = names.length ? `| filter in(dt.source_entity,array(${names.map((x) => `"${q(x)}"`).join(',')}))` : '';
 
   const eventsQuery = start ? `fetch dt.davis.events, from:now()-7d, to:now()\n| filter event.start >= toTimestamp("${q(start)}") - 15m and event.start <= toTimestamp("${q(end)}") + 15m\n| fields event.id,event.name,event.type,event.status,event.severity,event.start,event.end,event.description,dt.source_entity,dt.davis.is_rootcause_relevant,root_cause_entity_id\n| sort event.start asc\n| limit 40` : '';
   const logsQuery = start && names.length ? `fetch logs, from:now()-7d, to:now()\n| filter timestamp >= toTimestamp("${q(start)}") - 15m and timestamp <= toTimestamp("${q(end)}") + 15m\n${entityFilter}\n| fields timestamp,dt.source_entity,status,severity,content,message\n| sort timestamp asc\n| limit 20` : '';
@@ -138,27 +131,12 @@ async function loadEvidence(id: string): Promise<Evidence> {
     historyQuery ? boundedDql(historyQuery, 100) : Promise.resolve([] as Row[]),
   ]);
 
-  const occurrences: Occurrence[] = history
-    .map((row) => ({
-      problemId: text(row.display_id),
-      title: text(row['event.name']),
-      status: text(row['event.status']),
-      severity: text(row['event.severity']),
-      start: text(row['event.start']),
-      end: text(row['event.end']),
-      duration: duration(text(row['event.start']), text(row['event.end'])),
-    }))
-    .filter((x) => Boolean(x.problemId));
+  const occurrences: Occurrence[] = history.map((row) => ({
+    problemId: text(row.display_id), title: text(row['event.name']), status: text(row['event.status']), severity: text(row['event.severity']),
+    start: text(row['event.start']), end: text(row['event.end']), duration: duration(text(row['event.start']), text(row['event.end'])),
+  })).filter((x) => Boolean(x.problemId));
 
-  return {
-    problem,
-    events,
-    logs,
-    history,
-    snapshots: [],
-    occurrences,
-    managementZones: [],
-  };
+  return { problem, events, logs, history, snapshots: [], occurrences, managementZones: [] };
 }
 
 function fallbackRca(id: string, evidence: Evidence): string {
@@ -185,26 +163,21 @@ function extractAssistText(value: unknown, seen = new Set<object>()): string {
 
 function safeAssistEvidence(id: string, evidence: Evidence): string {
   const p = evidence.problem;
-  const safe = {
+  return JSON.stringify({
     problem: {
-      id,
-      title: text(p['event.name']),
-      status: text(p['event.status']),
-      severity: text(p['event.severity']),
-      start: text(p['event.start']),
-      end: text(p['event.end']),
-      impact: text(p['dt.davis.impact_level']),
-      rootCause: text(p.root_cause_entity_id),
-      affectedEntities: text(p.affected_entity_names),
-      affectedUsers: text(p.affected_users_count),
+      id, title: text(p['event.name']), status: text(p['event.status']), severity: text(p['event.severity']),
+      start: text(p['event.start']), end: text(p['event.end']), impact: text(p['dt.davis.impact_level']),
+      rootCause: text(p.root_cause_entity_id), affectedEntities: text(p.affected_entity_names), affectedUsers: text(p.affected_users_count),
     },
     correlatedEvents: evidence.events.slice(0, 20).map((e) => ({
-      id: text(e['event.id']), name: text(e['event.name']), type: text(e['event.type']), status: text(e['event.status']), severity: text(e['event.severity']), start: text(e['event.start']), end: text(e['event.end']), description: text(e['event.description']), source: text(e['dt.source_entity']), rootRelevant: e['dt.davis.is_rootcause_relevant'] === true, rootCause: text(e.root_cause_entity_id),
+      id: text(e['event.id']), name: text(e['event.name']), type: text(e['event.type']), status: text(e['event.status']),
+      severity: text(e['event.severity']), start: text(e['event.start']), end: text(e['event.end']),
+      description: text(e['event.description']), source: text(e['dt.source_entity']), rootRelevant: e['dt.davis.is_rootcause_relevant'] === true,
+      rootCause: text(e.root_cause_entity_id),
     })),
     incidentLogs: evidence.logs.slice(0, 10).map((l) => ({ timestamp: text(l.timestamp), source: text(l['dt.source_entity']), status: text(l.status), severity: text(l.severity), content: text(l.content) || text(l.message) })),
     pastOccurrences: evidence.occurrences.slice(0, 20),
-  };
-  return JSON.stringify(safe).slice(0, 12000);
+  }).slice(0, 12000);
 }
 
 async function ask(id: string, evidence: Evidence): Promise<{ analysis: string; assistFallback: boolean }> {
@@ -254,21 +227,10 @@ export default async function (payload: AnalyzePayload) {
     occurrenceCount: evidence.occurrences.length,
     occurrences: evidence.occurrences,
     problemFacts: {
-      title: text(p['event.name']) || 'Dynatrace Problem',
-      status: text(p['event.status']) || 'Not available',
-      severity: text(p['event.severity']) || 'Not available',
-      start: text(p['event.start']),
-      end: text(p['event.end']),
-      duration: duration(text(p['event.start']), text(p['event.end'])),
-      impactLevel: text(p['dt.davis.impact_level']) || 'Not available',
-      affectedUsers: text(p.affected_users_count),
-      affectedEntities: text(p.affected_entity_names),
+      title: text(p['event.name']) || 'Dynatrace Problem', status: text(p['event.status']) || 'Not available', severity: text(p['event.severity']) || 'Not available',
+      start: text(p['event.start']), end: text(p['event.end']), duration: duration(text(p['event.start']), text(p['event.end'])),
+      impactLevel: text(p['dt.davis.impact_level']) || 'Not available', affectedUsers: text(p.affected_users_count), affectedEntities: text(p.affected_entity_names),
     },
-    evidenceSummary: {
-      correlatedEvents: evidence.events.length,
-      incidentLogs: evidence.logs.length,
-      historicalOccurrences: evidence.occurrences.length,
-      timelineSnapshots: 0,
-    },
+    evidenceSummary: { correlatedEvents: evidence.events.length, incidentLogs: evidence.logs.length, historicalOccurrences: evidence.occurrences.length, timelineSnapshots: 0 },
   };
 }
