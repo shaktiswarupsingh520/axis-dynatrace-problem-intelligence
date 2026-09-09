@@ -1,11 +1,10 @@
-import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 import { publicClient } from '@dynatrace-sdk/client-davis-copilot';
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 type Row = Record<string, unknown>;
 interface AnalyzePayload { problemId: string; }
 interface Occurrence { problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string; }
-interface Evidence { problem: Row; events: Row[]; logs: Row[]; history: Row[]; snapshots: Row[]; occurrences: Occurrence[]; managementZones: string[]; }
+interface Evidence { problem: Row; events: Row[]; logs: Row[]; history: Row[]; snapshots: Row[]; occurrences: Occurrence[]; }
 
 const text = (value: unknown): string => {
   if (value == null) return '';
@@ -29,179 +28,145 @@ const duration = (start: string, end: string): string => {
   const mins = Math.max(0, b - a) / 60000;
   return mins < 60 ? `${mins.toFixed(1)} min` : mins < 1440 ? `${(mins / 60).toFixed(1)} h` : `${(mins / 1440).toFixed(1)} d`;
 };
-const normalizeRows = (value: unknown): Row[] => !Array.isArray(value) ? [] : value.filter((item): item is Row => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
+const rows = (value: unknown): Row[] => !Array.isArray(value) ? [] : value.filter((item): item is Row => Boolean(item) && typeof item === 'object' && !Array.isArray(item));
 
-function findValue(value: unknown, keys: string[], seen = new Set<object>()): string {
-  if (!value || typeof value !== 'object' || seen.has(value)) return '';
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findValue(item, keys, seen);
-      if (found) return found;
-    }
-    return '';
+async function dql(query: string, max = 100): Promise<Row[]> {
+  const response = await queryExecutionClient.queryExecute({
+    body: { query, requestTimeoutMilliseconds: 30000, maxResultRecords: max },
+  });
+  if (response.result) return rows(response.result.records);
+  if (!response.requestToken) throw new Error('DQL did not return a result or request token.');
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const polled = await queryExecutionClient.queryPoll({ requestToken: response.requestToken, requestTimeoutMilliseconds: 30000 });
+    if (polled.result) return rows(polled.result.records);
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  const record = value as Row;
-  for (const key of keys) {
-    const found = text(record[key]);
-    if (found) return found;
-  }
-  for (const child of Object.values(record)) {
-    const found = findValue(child, keys, seen);
-    if (found) return found;
-  }
-  return '';
-}
-
-async function safeDql(query: string, max = 50): Promise<Row[]> {
-  try {
-    const response = await queryExecutionClient.queryExecute({ body: { query, requestTimeoutMilliseconds: 2500, maxResultRecords: max } });
-    if (response.result) return normalizeRows(response.result.records);
-    if (response.requestToken) {
-      const polled = await queryExecutionClient.queryPoll({ requestToken: response.requestToken, requestTimeoutMilliseconds: 2000 });
-      return normalizeRows(polled.result?.records);
-    }
-  } catch (error) {
-    void error;
-  }
-  return [];
-}
-
-function problemFromRow(row: Row, id: string): Row {
-  return {
-    display_id: text(row.display_id) || id,
-    'event.name': text(row['event.name']) || 'Dynatrace Problem',
-    'event.status': text(row['event.status']) || 'UNKNOWN',
-    'event.severity': text(row['event.severity']) || 'UNKNOWN',
-    'event.start': text(row['event.start']),
-    'event.end': text(row['event.end']),
-    'event.description': text(row['event.description']),
-    'dt.davis.impact_level': text(row['dt.davis.impact_level']),
-    root_cause_entity_id: text(row.root_cause_entity_id) || text(row['root_cause.smartscape_entity']),
-    affected_entity_names: text(row.affected_entity_names),
-    affected_users_count: text(row.affected_users_count),
-  };
-}
-
-function problemFromNative(native: unknown, id: string): Row {
-  const record = native && typeof native === 'object' ? native as Row : {};
-  return {
-    display_id: text(record.displayId) || text(record.display_id) || id,
-    'event.name': text(record.title) || text(record.problemTitle) || text(record.eventName) || 'Dynatrace Problem',
-    'event.status': text(record.status) || 'UNKNOWN',
-    'event.severity': text(record.severityLevel) || text(record.severity) || 'UNKNOWN',
-    'event.start': text(record.startTime) || text(record.start),
-    'event.end': text(record.endTime) || text(record.end),
-    'event.description': text(record.description) || text(record.eventDescription),
-    'dt.davis.impact_level': text(record.impactLevel) || text(record.impact),
-    root_cause_entity_id: findValue(record, ['rootCauseEntity', 'root_cause_entity_id', 'smartscapeEntity']),
-    affected_entity_names: findValue(record, ['affectedEntityNames']),
-    affected_users_count: findValue(record, ['affectedUsersCount', 'affected_users_count']),
-  };
-}
-
-async function loadProblem(id: string): Promise<Row> {
-  try {
-    const native = await problemsClient.getProblem({ problemId: id, fields: 'evidenceDetails,impactAnalysis,recentComments' });
-    return problemFromNative(native, id);
-  } catch (error) {
-    void error;
-  }
-  const rows = await safeDql(`fetch dt.davis.problems, from:now()-7d, to:now()\n| filter display_id == "${q(id)}"\n| limit 1`, 1);
-  return rows[0] ? problemFromRow(rows[0], id) : { display_id: id, 'event.name': 'Dynatrace Problem', 'event.status': 'UNKNOWN', 'event.severity': 'UNKNOWN' };
+  throw new Error('DQL did not complete within the polling window.');
 }
 
 async function loadEvidence(id: string): Promise<Evidence> {
-  const problem = await loadProblem(id);
+  const escapedId = q(id);
+  const problemRows = await dql(`fetch dt.davis.problems, from:now()-365d, to:now()
+| filter not(dt.davis.is_duplicate) and display_id == "${escapedId}"
+| fields display_id,event.id,event.name,event.status,event.severity,event.category,event.start,event.end,event.description,dt.davis.event_ids,dt.davis.impact_level,dt.davis.affected_users_count,affected_entity_ids,root_cause.smartscape_entity,root_cause_entity_id
+| limit 1`, 1);
+  if (!problemRows.length) throw new Error(`Problem ${id} was not found in the last 365 days.`);
+
+  const problem = problemRows[0];
   const start = text(problem['event.start']);
   const end = text(problem['event.end']) || new Date().toISOString();
   const title = text(problem['event.name']);
-  const affected = text(problem.affected_entity_names);
-  const entities = affected.split(';').map((item) => item.trim()).filter(Boolean).slice(0, 20);
-  const entityFilter = entities.length ? `| filter in(dt.source_entity,array(${entities.map((name) => `"${q(name)}"`).join(',')}))` : '';
-  const eventQuery = start ? `fetch dt.davis.events, from:now()-2h, to:now()\n| filter event.start >= toTimestamp("${q(start)}") - 15m and event.start <= toTimestamp("${q(end)}") + 15m\n| fields event.id,event.name,event.type,event.status,event.severity,event.start,event.end,event.description,dt.source_entity,dt.davis.is_rootcause_relevant,root_cause_entity_id\n| sort event.start asc\n| limit 40` : '';
-  const logQuery = start && entities.length ? `fetch logs, from:now()-2h, to:now()\n| filter timestamp >= toTimestamp("${q(start)}") - 15m and timestamp <= toTimestamp("${q(end)}") + 15m\n${entityFilter}\n| fields timestamp,dt.source_entity,status,severity,content,message\n| sort timestamp asc\n| limit 20` : '';
-  const historyQuery = title ? `fetch dt.davis.problems, from:now()-30d, to:now()\n| filter not(dt.davis.is_duplicate) and event.name == "${q(title)}"\n| fields display_id,event.name,event.status,event.severity,event.start,event.end,event.category,root_cause.smartscape_entity,root_cause_entity_id\n| sort event.start desc\n| limit 100` : '';
-  const [events, logs, history] = await Promise.all([
-    eventQuery ? safeDql(eventQuery, 40) : Promise.resolve([] as Row[]),
-    logQuery ? safeDql(logQuery, 20) : Promise.resolve([] as Row[]),
-    historyQuery ? safeDql(historyQuery, 100) : Promise.resolve([] as Row[]),
-  ]);
+  const eventIds = Array.isArray(problem['dt.davis.event_ids']) ? problem['dt.davis.event_ids'].map(text).filter(Boolean) : [];
+  const entityIds = Array.isArray(problem.affected_entity_ids) ? problem.affected_entity_ids.map(text).filter(Boolean) : [text(problem.affected_entity_ids)].filter(Boolean);
+  const eventList = [...new Set(eventIds)].slice(0, 80).map((value) => `"${q(value)}"`).join(', ');
+  const entityList = [...new Set(entityIds)].slice(0, 80).map((value) => `"${q(value)}"`).join(', ');
+
+  const eventQuery = eventList ? dql(`fetch dt.davis.events, from:now()-365d, to:now()
+| filter in(event.id,array(${eventList}))
+| fields event.id,event.name,event.type,event.status,event.severity,event.category,event.start,event.end,event.description,dt.source_entity,dt.smartscape_source.id,dt.query,dt.davis.is_rootcause_relevant,root_cause_entity_id
+| sort event.start asc
+| limit 100`, 100).catch(() => [] as Row[]) : Promise.resolve([] as Row[]);
+
+  const logQuery = start && entityList ? dql(`fetch logs, from:now()-365d, to:now()
+| filter timestamp >= toTimestamp("${q(start)}") - 15m and timestamp <= toTimestamp("${q(end)}") + 15m
+| filter in(dt.source_entity,array(${entityList}))
+| fields timestamp,dt.source_entity,status,severity,content,message
+| sort timestamp asc
+| limit 100`, 100).catch(() => [] as Row[]) : Promise.resolve([] as Row[]);
+
+  const historyQuery = title ? dql(`fetch dt.davis.problems, from:now()-30d, to:now()
+| filter not(dt.davis.is_duplicate) and event.name == "${q(title)}"
+| fields display_id,event.name,event.status,event.severity,event.start,event.end,event.category,resolved_problem_duration,root_cause.smartscape_entity,root_cause_entity_id
+| sort event.start desc
+| limit 40`, 40).catch(() => [] as Row[]) : Promise.resolve([] as Row[]);
+
+  const snapshotQuery = text(problem['event.id']) ? dql(`fetch dt.davis.problems.snapshots, from:now()-365d, to:now()
+| filter event.id == "${q(text(problem['event.id']))}"
+| fields timestamp,event.status,event.status_transition,event.severity,event.name,root_cause_entity_id
+| sort timestamp asc
+| limit 80`, 80).catch(() => [] as Row[]) : Promise.resolve([] as Row[]);
+
+  const [events, logs, history, snapshots] = await Promise.all([eventQuery, logQuery, historyQuery, snapshotQuery]);
   const occurrences: Occurrence[] = history.map((row) => ({
-    problemId: text(row.display_id), title: text(row['event.name']), status: text(row['event.status']), severity: text(row['event.severity']),
-    start: text(row['event.start']), end: text(row['event.end']), duration: duration(text(row['event.start']), text(row['event.end'])),
+    problemId: text(row.display_id),
+    title: text(row['event.name']),
+    status: text(row['event.status']),
+    severity: text(row['event.severity']),
+    start: text(row['event.start']),
+    end: text(row['event.end']),
+    duration: duration(text(row['event.start']), text(row['event.end'])),
   })).filter((item) => Boolean(item.problemId));
-  return { problem, events, logs, history, snapshots: [], occurrences, managementZones: [] };
+
+  return { problem, events, logs, history, snapshots, occurrences };
 }
 
 function fallbackRca(id: string, evidence: Evidence, reason = ''): string {
   const problem = evidence.problem;
-  const root = text(problem.root_cause_entity_id);
+  const root = text(problem['root_cause.smartscape_entity']) || text(problem.root_cause_entity_id);
   const signal = text(evidence.events.find((event) => event['dt.davis.is_rootcause_relevant'] === true)?.['event.description']) || text(problem['event.description']);
   const rootLine = root ? `Davis exposed ${root} as the root-cause entity.` : 'Davis did not expose a definitive root-cause entity. Not proven by available evidence.';
   const assistNote = reason ? `\n\nDavis Assist status: ${reason}` : '';
-  return `## Executive Summary\nProblem ${id} is ${text(problem['event.status']) || 'in an unknown state'} with severity ${text(problem['event.severity']) || 'not available'}. ${signal || 'The retrieved evidence confirms the incident but does not expose a definitive causal signal.'}${assistNote}\n\n## Incident Overview\nTitle: ${text(problem['event.name']) || 'Dynatrace Problem'}\nStarted: ${text(problem['event.start']) || 'Not available'}\nEnded: ${text(problem['event.end']) || 'Open / not available'}\nImpact: ${text(problem['dt.davis.impact_level']) || 'Not available'}\n\n## Root Cause Assessment\n${rootLine}\n\n## Technical Root-Cause Chain\nObserved symptom → retrieved Davis evidence → affected entity. Any deeper causal relationship is not proven by available evidence.\n\n## Incident Timeline\n${text(problem['event.start']) || 'Start not available'} → ${text(problem['event.end']) || 'Open / not available'}\n\n## Past Occurrences & Recurrence Pattern\n${evidence.occurrences.length === 100 ? 'At least 100' : evidence.occurrences.length} matching occurrence records were retrieved from the last 30 days.\n\n## Impact Assessment\nImpact level: ${text(problem['dt.davis.impact_level']) || 'Not available'}.\n\n## Immediate Remediation Plan\nValidate the retrieved Davis signal against the affected entity and confirm recovery in Dynatrace before closing the incident.\n\n## Permanent / Preventive Actions\nAddress the causal component only after root cause confirmation; add monitoring for the observed failure pattern.\n\n## Monitoring & Alerting Recommendations\nMonitor the affected service/entity, response time, error rate, dependency health and recurrence frequency.\n\n## Validation Checklist\nConfirm root cause, correlate metrics/logs/traces, validate remediation, verify recovery and monitor recurrence.\n\n## RCA Confidence & Evidence Gaps\n${root && signal ? 'Medium' : 'Low'} — ${rootLine}`;
+  return `## Executive Summary\nProblem ${id} is ${text(problem['event.status']) || 'in an unknown state'} with severity ${text(problem['event.severity']) || 'not available'}. ${signal || 'The retrieved evidence confirms the incident but does not expose a definitive causal signal.'}${assistNote}\n\n## Incident Overview\nTitle: ${text(problem['event.name']) || 'Dynatrace Problem'}\nStarted: ${text(problem['event.start']) || 'Not available'}\nEnded: ${text(problem['event.end']) || 'Open / not available'}\nImpact: ${text(problem['dt.davis.impact_level']) || 'Not available'}\n\n## Root Cause Assessment\n${rootLine}\n\n## Technical Root-Cause Chain\nObserved symptom → retrieved Davis evidence → affected entity. Any deeper causal relationship is not proven by available evidence.\n\n## Incident Timeline\n${text(problem['event.start']) || 'Start not available'} → ${text(problem['event.end']) || 'Open / not available'}\n\n## Past Occurrences & Recurrence Pattern\n${evidence.occurrences.length === 40 ? 'At least 40' : evidence.occurrences.length} matching occurrence records were retrieved from the last 30 days.\n\n## Impact Assessment\nImpact level: ${text(problem['dt.davis.impact_level']) || 'Not available'}.\n\n## Immediate Remediation Plan\nValidate the retrieved Davis signal against the affected entity and confirm recovery in Dynatrace before closing the incident.\n\n## Permanent / Preventive Actions\nAddress the causal component only after root cause confirmation; add monitoring for the observed failure pattern.\n\n## Monitoring & Alerting Recommendations\nMonitor the affected service/entity, response time, error rate, dependency health and recurrence frequency.\n\n## Validation Checklist\nConfirm root cause, correlate metrics/logs/traces, validate remediation, verify recovery and monitor recurrence.\n\n## RCA Confidence & Evidence Gaps\n${root && signal ? 'Medium' : 'Low'} — ${rootLine}`;
 }
 
-function safeAssistEvidence(id: string, evidence: Evidence): string {
-  const problem = evidence.problem;
-  return JSON.stringify({
+function assistEvidence(id: string, evidence: Evidence): string {
+  const p = evidence.problem;
+  const payload = {
     problem: {
       id,
-      title: text(problem['event.name']),
-      status: text(problem['event.status']),
-      severity: text(problem['event.severity']),
-      start: text(problem['event.start']),
-      end: text(problem['event.end']),
-      impact: text(problem['dt.davis.impact_level']),
-      rootCause: text(problem.root_cause_entity_id),
-      affectedEntities: text(problem.affected_entity_names),
-      affectedUsers: text(problem.affected_users_count),
-      description: text(problem['event.description']),
+      title: text(p['event.name']),
+      status: text(p['event.status']),
+      severity: text(p['event.severity']),
+      category: text(p['event.category']),
+      start: text(p['event.start']),
+      end: text(p['event.end']),
+      duration: duration(text(p['event.start']), text(p['event.end'])),
+      description: text(p['event.description']),
+      rootCause: text(p['root_cause.smartscape_entity']) || text(p.root_cause_entity_id),
+      impact: text(p['dt.davis.impact_level']),
+      affectedUsers: text(p['dt.davis.affected_users_count']),
     },
-    correlatedEvents: evidence.events.slice(0, 20).map((event) => ({
-      id: text(event['event.id']), name: text(event['event.name']), type: text(event['event.type']), status: text(event['event.status']), severity: text(event['event.severity']),
-      start: text(event['event.start']), end: text(event['event.end']), description: text(event['event.description']), source: text(event['dt.source_entity']),
-      rootRelevant: event['dt.davis.is_rootcause_relevant'] === true, rootCause: text(event.root_cause_entity_id),
-    })),
-    incidentLogs: evidence.logs.slice(0, 10).map((log) => ({ timestamp: text(log.timestamp), source: text(log['dt.source_entity']), status: text(log.status), severity: text(log.severity), content: text(log.content) || text(log.message) })),
-    pastOccurrences: evidence.occurrences.slice(0, 20),
-  });
+    timeline: evidence.snapshots.slice(0, 50),
+    correlatedEvents: evidence.events.slice(0, 70),
+    incidentLogs: evidence.logs.slice(0, 50),
+    pastOccurrences: evidence.history.slice(0, 30),
+  };
+  return JSON.stringify(payload).slice(0, 28000);
 }
 
 async function ask(id: string, evidence: Evidence): Promise<{ analysis: string; assistFallback: boolean; assistStatus: string }> {
-  const compactEvidence = safeAssistEvidence(id, evidence);
-  const prompt = `Create a customer-ready Dynatrace incident RCA for Problem ${id}. Analyze ONLY the retrieved evidence below. Do not claim lack of access and do not ask for telemetry already included. Separate observed facts from inference. Never invent metrics, timestamps, deployments, root causes, affected users, recurrence or remediation results. If unproven, say "Not proven by available evidence". Return exactly these 12 sections with markdown headings: Executive Summary; Incident Overview; Root Cause Assessment; Technical Root-Cause Chain; Incident Timeline; Past Occurrences & Recurrence Pattern; Impact Assessment; Immediate Remediation Plan; Permanent / Preventive Actions; Monitoring & Alerting Recommendations; Validation Checklist; RCA Confidence & Evidence Gaps.\n\nRETRIEVED DYNATRACE EVIDENCE:\n${compactEvidence}`;
+  const evidenceText = assistEvidence(id, evidence);
+  const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze ONLY the retrieved evidence below. Do not claim lack of access and do not ask for telemetry already included. Separate observed facts from inference. Never invent metrics, timestamps, deployments, root causes, affected users, recurrence or remediation results. If unproven, say "Not proven by available evidence". Recommendations are proposals only.\n\nReturn exactly: 1. Executive Summary 2. Incident Overview 3. Root Cause Assessment 4. Technical Root-Cause Chain 5. Incident Timeline 6. Past Occurrences & Recurrence Pattern 7. Impact Assessment 8. Immediate Remediation Plan 9. Permanent / Preventive Actions 10. Monitoring & Alerting Recommendations 11. Validation Checklist 12. RCA Confidence & Evidence Gaps.\n\nRETRIEVED DYNATRACE EVIDENCE:\n${evidenceText}`;
+
   try {
-    const skills = await publicClient.listAvailableSkills();
-    if (!skills.skills?.includes('conversation')) {
-      return { analysis: fallbackRca(id, evidence, 'Conversation skill is not available for this app session.'), assistFallback: true, assistStatus: 'conversation skill unavailable' };
-    }
-    const request = {
+    // This is the proven request shape used by the working Axis Davis Capacity Planner RCA.
+    // Do not add acceptType or a preflight listAvailableSkills call here: the installed SDK
+    // typings expose only body, and the known-good implementation uses body-only.
+    const response = await publicClient.recommenderConversation({
       body: {
         text: prompt,
         context: [
           { type: 'document-retrieval', value: 'disabled' },
-          { type: 'supplementary', value: compactEvidence },
+          { type: 'supplementary', value: evidenceText },
           { type: 'instruction', value: 'Analyze the supplied evidence directly. Do not produce a generic access limitation response.' },
         ],
         annotations: { origin: 'Axis Problem Intelligence RCA', problemId: id },
       },
-    } as Parameters<typeof publicClient.recommenderConversation>[0];
-    const response = await Promise.race([
-      publicClient.recommenderConversation(request),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Dynatrace Assist request timed out after 15 seconds.')), 15000)),
-    ]);
+    });
+
     if (Array.isArray(response)) {
-      return { analysis: fallbackRca(id, evidence, 'Assist returned a streaming response.'), assistFallback: true, assistStatus: 'unexpected streaming response' };
+      return { analysis: fallbackRca(id, evidence, 'Assist returned a streaming event array; the app expects the non-streaming response.'), assistFallback: true, assistStatus: 'unexpected streaming response' };
     }
+
     const result = response as { status?: string; text?: string; answer?: string; content?: string };
     if (result.status === 'FAILED') {
       return { analysis: fallbackRca(id, evidence, 'Dynatrace Assist returned FAILED.'), assistFallback: true, assistStatus: 'FAILED' };
     }
-    const answer = [result.text, result.answer, result.content].find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim() ?? '';
+
+    const answer = [result.text, result.answer, result.content]
+      .find((value): value is string => typeof value === 'string' && value.trim().length > 0)?.trim() ?? '';
     if (!answer) {
-      return { analysis: fallbackRca(id, evidence, 'Dynatrace Assist returned no RCA text.'), assistFallback: true, assistStatus: 'empty response' };
+      return { analysis: fallbackRca(id, evidence, 'Dynatrace Assist returned an empty RCA.'), assistFallback: true, assistStatus: 'empty response' };
     }
     return { analysis: answer, assistFallback: false, assistStatus: result.status || 'SUCCESSFUL' };
   } catch (error) {
@@ -213,10 +178,12 @@ async function ask(id: string, evidence: Evidence): Promise<{ analysis: string; 
 export default async function (payload: AnalyzePayload) {
   if (!payload?.problemId) throw new Error('problemId is required');
   if (!/^P-\d+$/.test(payload.problemId)) throw new Error('A valid Dynatrace Problem ID such as P-260948426 is required.');
+
   const evidence = await loadEvidence(payload.problemId);
   const result = await ask(payload.problemId, evidence);
   const problem = evidence.problem;
-  const nativeRootCauseEntity = text(problem.root_cause_entity_id) || text(evidence.events.find((event) => event['dt.davis.is_rootcause_relevant'] === true)?.root_cause_entity_id) || null;
+  const nativeRootCauseEntity = text(problem['root_cause.smartscape_entity']) || text(problem.root_cause_entity_id) || text(evidence.events.find((event) => event['dt.davis.is_rootcause_relevant'] === true)?.root_cause_entity_id) || null;
+
   return {
     problemId: payload.problemId,
     analysis: result.analysis,
@@ -226,14 +193,25 @@ export default async function (payload: AnalyzePayload) {
     assistFallback: result.assistFallback,
     assistStatus: result.assistStatus,
     recurrenceWindow: '30d',
-    managementZones: evidence.managementZones,
+    managementZones: [],
     occurrenceCount: evidence.occurrences.length,
     occurrences: evidence.occurrences,
     problemFacts: {
-      title: text(problem['event.name']) || 'Dynatrace Problem', status: text(problem['event.status']) || 'Not available', severity: text(problem['event.severity']) || 'Not available',
-      start: text(problem['event.start']), end: text(problem['event.end']), duration: duration(text(problem['event.start']), text(problem['event.end'])),
-      impactLevel: text(problem['dt.davis.impact_level']) || 'Not available', affectedUsers: text(problem.affected_users_count), affectedEntities: text(problem.affected_entity_names),
+      title: text(problem['event.name']) || 'Dynatrace Problem',
+      status: text(problem['event.status']) || 'Not available',
+      severity: text(problem['event.severity']) || 'Not available',
+      start: text(problem['event.start']),
+      end: text(problem['event.end']),
+      duration: duration(text(problem['event.start']), text(problem['event.end'])),
+      impactLevel: text(problem['dt.davis.impact_level']) || 'Not available',
+      affectedUsers: text(problem['dt.davis.affected_users_count']),
+      affectedEntities: text(problem.affected_entity_ids),
     },
-    evidenceSummary: { correlatedEvents: evidence.events.length, incidentLogs: evidence.logs.length, historicalOccurrences: evidence.history.length, timelineSnapshots: evidence.snapshots.length },
+    evidenceSummary: {
+      correlatedEvents: evidence.events.length,
+      incidentLogs: evidence.logs.length,
+      historicalOccurrences: evidence.history.length,
+      timelineSnapshots: evidence.snapshots.length,
+    },
   };
 }
