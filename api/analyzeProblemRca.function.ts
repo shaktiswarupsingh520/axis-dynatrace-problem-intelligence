@@ -147,9 +147,16 @@ function safeAssistEvidence(id: string, evidence: Evidence): string {
   const problem = evidence.problem;
   return JSON.stringify({
     problem: {
-      id, title: text(problem['event.name']), status: text(problem['event.status']), severity: text(problem['event.severity']),
-      start: text(problem['event.start']), end: text(problem['event.end']), impact: text(problem['dt.davis.impact_level']),
-      rootCause: text(problem.root_cause_entity_id), affectedEntities: text(problem.affected_entity_names), affectedUsers: text(problem.affected_users_count),
+      id,
+      title: text(problem['event.name']),
+      status: text(problem['event.status']),
+      severity: text(problem['event.severity']),
+      start: text(problem['event.start']),
+      end: text(problem['event.end']),
+      impact: text(problem['dt.davis.impact_level']),
+      rootCause: text(problem.root_cause_entity_id),
+      affectedEntities: text(problem.affected_entity_names),
+      affectedUsers: text(problem.affected_users_count),
       description: text(problem['event.description']),
     },
     correlatedEvents: evidence.events.slice(0, 20).map((event) => ({
@@ -164,29 +171,29 @@ function safeAssistEvidence(id: string, evidence: Evidence): string {
 
 async function ask(id: string, evidence: Evidence): Promise<{ analysis: string; assistFallback: boolean; assistStatus: string }> {
   const compactEvidence = safeAssistEvidence(id, evidence);
-  const prompt = `Create a customer-ready Dynatrace incident RCA for Problem ${id}. Analyze ONLY the retrieved evidence below. Do not claim lack of access and do not ask for telemetry already included. Separate observed facts from inference. Never invent metrics, timestamps, deployments, root causes, affected users, recurrence or remediation results. If unproven, say "Not proven by available evidence". Recommendations are proposals only. Return exactly these 12 sections with markdown headings: Executive Summary; Incident Overview; Root Cause Assessment; Technical Root-Cause Chain; Incident Timeline; Past Occurrences & Recurrence Pattern; Impact Assessment; Immediate Remediation Plan; Permanent / Preventive Actions; Monitoring & Alerting Recommendations; Validation Checklist; RCA Confidence & Evidence Gaps.\n\nRETRIEVED DYNATRACE EVIDENCE:\n${compactEvidence}`;
+  const prompt = `Create a customer-ready Dynatrace incident RCA for Problem ${id}. Analyze ONLY the retrieved evidence below. Do not claim lack of access and do not ask for telemetry already included. Separate observed facts from inference. Never invent metrics, timestamps, deployments, root causes, affected users, recurrence or remediation results. If unproven, say "Not proven by available evidence". Return exactly these 12 sections with markdown headings: Executive Summary; Incident Overview; Root Cause Assessment; Technical Root-Cause Chain; Incident Timeline; Past Occurrences & Recurrence Pattern; Impact Assessment; Immediate Remediation Plan; Permanent / Preventive Actions; Monitoring & Alerting Recommendations; Validation Checklist; RCA Confidence & Evidence Gaps.\n\nRETRIEVED DYNATRACE EVIDENCE:\n${compactEvidence}`;
   try {
     const skills = await publicClient.listAvailableSkills();
     if (!skills.skills?.includes('conversation')) {
       return { analysis: fallbackRca(id, evidence, 'Conversation skill is not available for this app session.'), assistFallback: true, assistStatus: 'conversation skill unavailable' };
     }
+    const request = {
+      body: {
+        text: prompt,
+        context: [
+          { type: 'document-retrieval', value: 'disabled' },
+          { type: 'supplementary', value: compactEvidence },
+          { type: 'instruction', value: 'Analyze the supplied evidence directly. Do not produce a generic access limitation response.' },
+        ],
+        annotations: { origin: 'Axis Problem Intelligence RCA', problemId: id },
+      },
+    } as Parameters<typeof publicClient.recommenderConversation>[0];
     const response = await Promise.race([
-      publicClient.recommenderConversation({
-        acceptType: 'application/json',
-        body: {
-          text: prompt,
-          context: [
-            { type: 'document-retrieval', value: 'disabled' },
-            { type: 'supplementary', value: compactEvidence },
-            { type: 'instruction', value: 'Analyze the supplied evidence directly. Do not produce a generic access limitation response.' },
-          ],
-          annotations: { origin: 'Axis Problem Intelligence RCA', problemId: id },
-        },
-      }),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Dynatrace Assist request timed out after 9 seconds.')), 9000)),
+      publicClient.recommenderConversation(request),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Dynatrace Assist request timed out after 15 seconds.')), 15000)),
     ]);
     if (Array.isArray(response)) {
-      return { analysis: fallbackRca(id, evidence, 'Assist returned a streaming response; non-streaming JSON was requested but not received.'), assistFallback: true, assistStatus: 'unexpected streaming response' };
+      return { analysis: fallbackRca(id, evidence, 'Assist returned a streaming response.'), assistFallback: true, assistStatus: 'unexpected streaming response' };
     }
     const result = response as { status?: string; text?: string; answer?: string; content?: string };
     if (result.status === 'FAILED') {
