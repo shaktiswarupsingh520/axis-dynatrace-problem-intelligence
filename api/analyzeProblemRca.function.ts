@@ -131,17 +131,16 @@ function assistEvidence(id: string, evidence: Evidence): string {
     incidentLogs: evidence.logs.slice(0, 50),
     pastOccurrences: evidence.history.slice(0, 30),
   };
-  return JSON.stringify(payload).slice(0, 28000);
+  return JSON.stringify(payload).slice(0, 18000);
 }
 
 async function ask(id: string, evidence: Evidence): Promise<{ analysis: string; assistFallback: boolean; assistStatus: string }> {
   const evidenceText = assistEvidence(id, evidence);
-  const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze ONLY the retrieved evidence below. Do not claim lack of access and do not ask for telemetry already included. Separate observed facts from inference. Never invent metrics, timestamps, deployments, root causes, affected users, recurrence or remediation results. If unproven, say "Not proven by available evidence". Recommendations are proposals only.\n\nReturn exactly: 1. Executive Summary 2. Incident Overview 3. Root Cause Assessment 4. Technical Root-Cause Chain 5. Incident Timeline 6. Past Occurrences & Recurrence Pattern 7. Impact Assessment 8. Immediate Remediation Plan 9. Permanent / Preventive Actions 10. Monitoring & Alerting Recommendations 11. Validation Checklist 12. RCA Confidence & Evidence Gaps.\n\nRETRIEVED DYNATRACE EVIDENCE:\n${evidenceText}`;
+  // IMPORTANT: Dynatrace Davis Copilot validates body.text independently and limits it to 10,000 chars.
+  // Keep the instruction prompt small; put retrieved evidence in the supplementary context instead.
+  const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze ONLY the supplied retrieved evidence. Do not claim lack of access. Separate observed facts from inference. Never invent metrics, timestamps, deployments, root causes, affected users, recurrence or remediation results. If unproven, say "Not proven by available evidence". Recommendations are proposals only. Return exactly these 12 sections: Executive Summary; Incident Overview; Root Cause Assessment; Technical Root-Cause Chain; Incident Timeline; Past Occurrences & Recurrence Pattern; Impact Assessment; Immediate Remediation Plan; Permanent / Preventive Actions; Monitoring & Alerting Recommendations; Validation Checklist; RCA Confidence & Evidence Gaps.`;
 
   try {
-    // This is the proven request shape used by the working Axis Davis Capacity Planner RCA.
-    // Do not add acceptType or a preflight listAvailableSkills call here: the installed SDK
-    // typings expose only body, and the known-good implementation uses body-only.
     const response = await publicClient.recommenderConversation({
       body: {
         text: prompt,
