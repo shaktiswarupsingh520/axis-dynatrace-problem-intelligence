@@ -105,16 +105,12 @@ async function enhanceWithAssist(problemId: string, context?: { problemRecord: R
   if (!context) return undefined;
   const p = context.problemRecord;
   const evidence = JSON.stringify({ problem: { id: problemId, title: text(p['event.name']), status: text(p['event.status']), severity: text(p['event.severity']), impact: text(p['dt.davis.impact_level']), start: text(p['event.start']), end: text(p['event.end']), description: text(p['event.description']), rootCause: text(p['root_cause.smartscape_entity']) || text(p.root_cause_entity_id), affectedUsers: text(p['dt.davis.affected_users_count']), affectedEntities: text(p.affected_entity_names) }, events: context.eventRecords.slice(0, 20) }).slice(0, 6200);
-  const prompt = `Give a concise, technically specific RCA summary for Dynatrace Problem ${problemId}. Use ONLY this evidence. Do not invent a root cause. If not proven, explicitly say so. Return exactly four labeled lines: ROOT CAUSE, EVIDENCE, CONFIDENCE, REMEDIATION. Keep the response under 1800 characters.\nEVIDENCE:\n${evidence}`;
+  const prompt = `Create a customer-ready incident RCA for Dynatrace Problem ${problemId} using ONLY the supplied evidence. Never invent facts, root causes, timestamps, deployments, impact or remediation results. Clearly distinguish observed evidence from inference and say "Not proven by available evidence" when appropriate. Return exactly these sections: ## Executive Summary, ## Incident Overview, ## Root Cause Assessment, ## Technical Root-Cause Chain, ## Incident Timeline, ## Past Occurrences & Recurrence Pattern, ## Impact Assessment, ## Immediate Remediation Plan, ## Permanent / Preventive Actions, ## Monitoring & Alerting Recommendations, ## Validation Checklist, ## RCA Confidence & Evidence Gaps. Keep the complete response concise and below 7500 characters.\nEVIDENCE:\n${evidence}`;
   try {
-    const response = await publicClient.recommenderConversation({ body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: evidence }, { type: 'instruction', value: 'Analyze the supplied Dynatrace evidence directly.' }], annotations: { origin: 'Axis Problem Intelligence Overview RCA', problemId } } });
+    const response = await publicClient.recommenderConversation({ body: { text: prompt }, });
     const answer = extractAssistText(response);
     if (!answer) return undefined;
-    const get = (label: string) => {
-      const match = answer.match(new RegExp(`${label}\\s*:\\s*(.*?)(?=\\n[A-Z ]+\\s*:|$)`, 'is'));
-      return match?.[1]?.trim();
-    };
-    return { probableCause: get('ROOT CAUSE') || undefined, evidenceText: get('EVIDENCE') || undefined, confidence: get('CONFIDENCE') || undefined, remediation: get('REMEDIATION') || undefined };
+    return { fullRca: answer };
   } catch {
     return undefined;
   }
@@ -126,6 +122,6 @@ export default async function (payload: GetProblemDetailsPayload) {
   const context = await loadGrailProblemContext(payload.problemId);
   const causal = buildCausalAnalysis(problem, context);
   const ai = await enhanceWithAssist(payload.problemId, context);
-  const problemAnalysis = { ...causal, probableCause: ai?.probableCause || causal.probableCause, remediation: ai?.remediation || causal.remediation, confidence: ai?.confidence || causal.confidence, evidence: ai?.evidenceText ? [ai.evidenceText, ...causal.evidence] : causal.evidence };
+  const problemAnalysis = { ...causal, fullRca: ai?.fullRca, probableCause: causal.probableCause, remediation: causal.remediation, confidence: causal.confidence, evidence: causal.evidence };
   return { ...problem, problemAnalysis };
 }
