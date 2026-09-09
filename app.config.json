@@ -3,15 +3,15 @@
   "environmentUrl": "https://axis-prod.apps.dynatrace.com/",
   "app": {
     "name": "Axis Problem Intelligence",
-    "version": "0.0.33",
+    "version": "0.0.29",
     "description": "Axis Bank Dynatrace Problem Intelligence and SRE Operations application",
     "id": "my.axis.problem.intelligence",
     "scopes": [
       { "name": "environment-api:problems:read", "comment": "Read Dynatrace problems" },
-      { "name": "storage:buckets:read", "comment": "Read Grail buckets for problem intelligence queries" },
+      { "name": "storage:buckets:read", "comment": "Read Grail buckets for alert dump scoping" },
       { "name": "storage:entities:read", "comment": "Read entity and management-zone membership for alert dump scoping" },
-      { "name": "storage:events:read", "comment": "Read Davis events for causal evidence" },
-      { "name": "storage:logs:read", "comment": "Read incident-window logs for RCA evidence" },
+      { "name": "storage:events:read", "comment": "Read Davis events for incident intelligence" },
+      { "name": "storage:logs:read", "comment": "Read incident logs for RCA evidence" },
       { "name": "davis:analyzers:read", "comment": "Read Dynatrace Intelligence analyzer definitions" },
       { "name": "davis:analyzers:execute", "comment": "Execute Dynatrace Intelligence analysis" },
       { "name": "davis-copilot:conversations:execute", "comment": "Generate AI-assisted incident RCA using Dynatrace Assist" }
