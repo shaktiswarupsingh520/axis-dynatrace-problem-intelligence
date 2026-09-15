@@ -73,7 +73,7 @@ async function load(id: string): Promise<{ problem: Row; events: Row[] }> {
 async function assist(id: string, evidence: { problem: Row; events: Row[] }): Promise<string> {
   const p = evidence.problem;
   const compactEvidence = JSON.stringify({ problem: { id, title: s(p['event.name']), status: s(p['event.status']), severity: s(p['event.severity']), category: s(p['event.category']), start: s(p['event.start']), end: s(p['event.end']), description: s(p['event.description']), rootCause: s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id), impact: s(p['dt.davis.impact_level']), affectedUsers: s(p['dt.davis.affected_users_count']), affectedEntities: s(p.affected_entity_names) }, correlatedEvents: evidence.events.slice(0, 60) }).slice(0, 24000);
-  const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze ONLY the retrieved evidence below. Never invent facts, root causes, timestamps, deployments, impact, recurrence or completed remediation. Clearly distinguish observed evidence from inference and say "Not proven by available evidence" when appropriate. Recommendations are proposals only. Return exactly these sections: 1. Executive Summary 2. Incident Overview 3. Root Cause Assessment 4. Technical Root-Cause Chain 5. Incident Timeline 6. Past Occurrences & Recurrence Pattern 7. Impact Assessment 8. Immediate Remediation Plan 9. Permanent / Preventive Actions 10. Monitoring & Alerting Recommendations 11. Validation Checklist 12. RCA Confidence & Evidence Gaps. Keep the response concise and below 7500 characters.\n\nRETRIEVED DYNATRACE EVIDENCE:\n${compactEvidence}`;
+  const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze the supplied Dynatrace evidence in the supplementary context. Never invent facts, root causes, timestamps, deployments, impact, recurrence or completed remediation. Clearly distinguish observed evidence from inference and say "Not proven by available evidence" when appropriate. Recommendations are proposals only. Return exactly these sections: 1. Executive Summary 2. Incident Overview 3. Root Cause Assessment 4. Technical Root-Cause Chain 5. Incident Timeline 6. Past Occurrences & Recurrence Pattern 7. Impact Assessment 8. Immediate Remediation Plan 9. Permanent / Preventive Actions 10. Monitoring & Alerting Recommendations 11. Validation Checklist 12. RCA Confidence & Evidence Gaps. Keep the response concise and below 7500 characters.`;
   const response = await publicClient.recommenderConversation({ body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: compactEvidence }, { type: 'instruction', value: 'Analyze the supplied evidence directly. Do not produce a generic access limitation response.' }], annotations: { origin: 'Axis Problem Intelligence RCA', problemId: id } } }) as unknown as Row;
   const status = s(response.status);
   if (status === 'FAILED') throw new Error('Dynatrace Assist returned FAILED.');
@@ -96,6 +96,8 @@ export default async function (payload: Payload) {
   const probableEvidence = evidence.events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 12);
   return {
     problemId: payload.problemId,
+    displayId: payload.problemId,
+    displayName: s(p['event.name']) || 'Dynatrace Problem',
     analysis,
     generatedAt: new Date().toISOString(),
     nativeRootCauseEntity: root || null,
@@ -106,6 +108,14 @@ export default async function (payload: Payload) {
     managementZones: [],
     occurrenceCount: 0,
     occurrences: [],
+    title: s(p['event.name']) || 'Dynatrace Problem',
+    status: s(p['event.status']) || 'Not available',
+    severityLevel: s(p['event.severity']) || 'Not available',
+    impactLevel: s(p['dt.davis.impact_level']) || 'Not available',
+    startTime: s(p['event.start']),
+    endTime: s(p['event.end']),
+    evidenceDetails: { details: evidence.events.slice(0, 80).map((event) => ({ displayName: s(event['event.name']) || s(event['event.type']) || 'Davis event', evidenceType: s(event['event.type']), rootCauseRelevant: event['dt.davis.is_rootcause_relevant'] === true, entity: { name: s(event['dt.smartscape_source.id']), entityId: { id: s(event['dt.smartscape_source.id']), type: s(event['dt.smartscape_source.type']) } } })) },
+    impactAnalysis: { impacts: s(p['dt.davis.affected_users_count']) ? [{ impactType: 'Davis affected users', estimatedAffectedUsers: Number(s(p['dt.davis.affected_users_count'])) || undefined }] : [] },
     problemFacts: { title: s(p['event.name']) || 'Dynatrace Problem', status: s(p['event.status']) || 'Not available', severity: s(p['event.severity']) || 'Not available', category: s(p['event.category']) || 'Not available', start: s(p['event.start']), end: s(p['event.end']), duration: duration(s(p['event.start']), s(p['event.end'])), impactLevel: s(p['dt.davis.impact_level']) || 'Not available', affectedUsers: s(p['dt.davis.affected_users_count']) || 'Not available', affectedEntities: s(p.affected_entity_names) || s(p.affected_entity_ids) || 'Not available' },
     evidenceSummary: { correlatedEvents: evidence.events.length, incidentLogs: 0, historicalOccurrences: 0, timelineSnapshots: 0 },
     problemAnalysis: {
