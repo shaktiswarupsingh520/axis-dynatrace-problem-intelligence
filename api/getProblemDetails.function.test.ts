@@ -100,7 +100,17 @@ describe('getProblemDetails.function', () => {
       problemId: 'P-123',
       fields: 'evidenceDetails,impactAnalysis,recentComments',
     });
-    expect(mockedQueryExecute).toHaveBeenCalledTimes(2);
+    expect(mockedQueryExecute).toHaveBeenCalled();
+    expect(
+      mockedQueryExecute.mock.calls.some(([request]) =>
+        request.body.query.includes('fetch dt.davis.problems')
+      ),
+    ).toBe(true);
+    expect(
+      mockedQueryExecute.mock.calls.some(([request]) =>
+        request.body.query.includes('fetch dt.davis.events')
+      ),
+    ).toBe(true);
     expect(result.problemAnalysis?.rootCause).toBe('node-01');
     expect(result.problemAnalysis?.rootCauseEntityId).toBe('HOST-123');
     expect(result.problemAnalysis?.rootCauseEntityType).toBe('host');
