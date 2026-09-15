@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 type Row = Record<string, unknown>;
@@ -14,7 +14,7 @@ export const AlertDump = () => {
   const navigate = useNavigate();
   const [range, setRange] = useState('24h'); const [status, setStatus] = useState('ALL'); const [severity, setSeverity] = useState('ALL'); const [zoneId, setZoneId] = useState('ALL'); const [page, setPage] = useState(1); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [data, setData] = useState<Response | null>(null);
   const pageSize = 50;
-  const load = async (nextRange = range, nextStatus = status, nextSeverity = severity, nextZone = zoneId) => {
+  const load = useCallback(async (nextRange = range, nextStatus = status, nextSeverity = severity, nextZone = zoneId) => {
     setLoading(true); setError('');
     try {
       const response = await fetch('/api/getAlertDump', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ from: `now-${nextRange}`, status: nextStatus, severity: nextSeverity, managementZoneId: nextZone, limit: 1000 }) });
@@ -24,8 +24,8 @@ export const AlertDump = () => {
       setData(JSON.parse(body) as Response); setPage(1);
     } catch (cause: unknown) { setData(null); setError(cause instanceof Error ? cause.message : 'Unable to load Alert Dump.'); }
     finally { setLoading(false); }
-  };
-  React.useEffect(() => { void load(); }, []);
+  }, [range, status, severity, zoneId]);
+  useEffect(() => { void load(); }, [load]);
   const rows = useMemo(() => data?.rows ?? [], [data]); const zones = data?.managementZones ?? [];
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize)); const currentPage = Math.min(page, pageCount); const visible = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const exportCsv = () => { const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Root Cause Entity','Description']; const keys = ['display_id','event.name','event.status','event.severity','event.category','dt.davis.impact_level','event.start','event.end','problem.duration','affected_entity_names','root_cause_entity_id','event.description']; const content = '\uFEFF' + [columns.map(csvCell).join(','), ...rows.map((row) => keys.map((key) => csvCell(row[key])).join(','))].join('\r\n'); download(content, 'text/csv;charset=utf-8', 'dynatrace-alert-dump.csv'); };
