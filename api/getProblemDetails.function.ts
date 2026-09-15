@@ -47,7 +47,8 @@ function fallback(id: string, p: Row, reason: string, events: Row[]): string {
   const severity = s(p['event.severity']) || 'Not available';
   const impact = s(p['dt.davis.impact_level']) || 'Not available';
   const start = s(p['event.start']); const end = s(p['event.end']);
-  const root = s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id);
+  const rootValue = p['root_cause.smartscape_entity'];
+  const root = typeof rootValue === 'object' && rootValue !== null ? s((rootValue as Row).name) || s((rootValue as Row).id) : s(rootValue) || s(p.root_cause_entity_id);
   const signal = events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 3).join(' | ');
   return `## Executive Summary\n${title} (${id}) is ${status.toLowerCase()} with severity ${severity}. ${root ? `Davis exposed ${root} as the root-cause entity.` : 'Not proven by available evidence.'}\n\n## Incident Overview\nTitle: ${title}\nStatus: ${status}\nSeverity: ${severity}\nStarted: ${start || 'Not available'}\nDuration: ${duration(start, end)}\n\n## Root Cause Assessment\n${root ? `Davis identified ${root} as the root-cause entity.` : 'Not proven by available evidence.'}\n\n## Technical Root-Cause Chain\n${signal || 'Not proven by available evidence.'}\n\n## Incident Timeline\n${events.length ? events.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available.'}\n\n## Past Occurrences & Recurrence Pattern\nNot available from this RCA request.\n\n## Impact Assessment\nImpact level: ${impact}. Affected-user count: ${s(p['dt.davis.affected_users_count']) || 'Not available'}.\n\n## Immediate Remediation Plan\nValidate the identified Davis evidence and affected dependency before making a production change.\n\n## Permanent / Preventive Actions\nNot proposed as completed actions; validate the causal signal first.\n\n## Monitoring & Alerting Recommendations\nMonitor the affected service, response time, errors, dependency health and the Davis causal signal.\n\n## Validation Checklist\nConfirm recovery, verify the causal metric returns to baseline, and verify that the problem does not recur.\n\n## RCA Confidence & Evidence Gaps\nLow — Dynatrace Assist did not return the generated RCA. ${reason}`;
 }
@@ -86,7 +87,11 @@ export default async function (payload: Payload) {
   let analysis = ''; let assistStatus = 'SUCCESSFUL'; let assistFallback = false;
   try { analysis = await askAssist(payload.problemId, evidence); } catch (error) { assistFallback = true; assistStatus = error instanceof Error ? error.message : 'Assist request failed'; analysis = fallback(payload.problemId, evidence.problem, assistStatus, evidence.events); }
   const p = evidence.problem;
-  const root = s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id);
+  const rootData = p['root_cause.smartscape_entity'];
+  const root = typeof rootData === 'object' && rootData !== null ? s((rootData as Row).name) || s((rootData as Row).id) : s(rootData) || s(p.root_cause_entity_id);
+  const rootEntityId = typeof rootData === 'object' && rootData !== null ? s((rootData as Row).id) || s(p.root_cause_entity_id) : s(p.root_cause_entity_id) || (root ? root : '');
+  const rootEntityType = typeof rootData === 'object' && rootData !== null ? s((rootData as Row).type) : '';
+  const probableEvidence = evidence.events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 12);
   return {
     problemId: payload.problemId,
     analysis,
@@ -101,5 +106,22 @@ export default async function (payload: Payload) {
     occurrences: [],
     problemFacts: { title: s(p['event.name']) || 'Dynatrace Problem', status: s(p['event.status']) || 'Not available', severity: s(p['event.severity']) || 'Not available', category: s(p['event.category']) || 'Not available', start: s(p['event.start']), end: s(p['event.end']), duration: duration(s(p['event.start']), s(p['event.end'])), impactLevel: s(p['dt.davis.impact_level']) || 'Not available', affectedUsers: s(p['dt.davis.affected_users_count']) || 'Not available', affectedEntities: s(p.affected_entity_names) || s(p.affected_entity_ids) || 'Not available' },
     evidenceSummary: { correlatedEvents: evidence.events.length, incidentLogs: 0, historicalOccurrences: 0, timelineSnapshots: 0 },
+    problemAnalysis: {
+      rootCause: root || 'No definitive root-cause entity exposed yet',
+      rootCauseEntityId: rootEntityId || undefined,
+      rootCauseEntityType: rootEntityType || undefined,
+      probableCause: root ? `Davis exposed ${root} as the root-cause entity. ${probableEvidence[0] || ''}`.trim() : 'Not proven by available evidence. This is evidence, not a confirmed root cause.',
+      impactSummary: `Impact level: ${s(p['dt.davis.impact_level']) || 'not available'}. Affected users: ${s(p['dt.davis.affected_users_count']) || 'not available'}.`,
+      remediation: 'Validate the causal signal and affected dependency before making a production change.',
+      confidence: root ? 'High' : (p['dt.analysis.ready'] === false ? 'Pending Davis analysis' : 'Evidence based'),
+      evidence: probableEvidence,
+      eventIds: Array.isArray(p['dt.davis.event_ids']) ? p['dt.davis.event_ids'].map(s).filter(Boolean) : [],
+      causalEvents: evidence.events.filter((e) => e['dt.davis.is_rootcause_relevant'] === true).slice(0, 10).map((e) => ({ id: s(e['event.id']), name: s(e['event.name']), description: s(e['event.description']), entityId: s(e['dt.smartscape_source.id']), entityType: s(e['dt.smartscape_source.type']) })),
+      fullRca: analysis,
+      assistFallback,
+      assistStatus,
+      analysisReady: p['dt.analysis.ready'],
+      affectedUsers: s(p['dt.davis.affected_users_count']) || undefined,
+    },
   };
 }
