@@ -1,127 +1,112 @@
-import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 import { publicClient } from '@dynatrace-sdk/client-davis-copilot';
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 type Row = Record<string, unknown>;
-interface GetProblemDetailsPayload { problemId: string; }
-interface EvidenceLike { displayName?: string; evidenceType?: string; entity?: { name?: string; entityId?: { id?: string; type?: string } }; groupingEntity?: { name?: string }; rootCauseRelevant?: boolean; }
-interface ImpactLike { impactType?: string; impactedEntity?: { name?: string }; estimatedAffectedUsers?: number; numberOfPotentiallyAffectedServiceCalls?: number; }
+interface Payload { problemId: string; }
 
-const text = (value: unknown): string => {
-  if (value == null) return '';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
-  if (Array.isArray(value)) return value.map(text).filter(Boolean).join('; ');
-  return JSON.stringify(value) ?? '';
+const s = (v: unknown): string => {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
+  if (Array.isArray(v)) return v.map(s).filter(Boolean).join('; ');
+  return typeof v === 'object' ? JSON.stringify(v) : String(v);
 };
-const recordValue = (value: unknown): Row | undefined => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Row : undefined;
-const stringArray = (value: unknown): string[] => Array.isArray(value) ? value.map(text).filter(Boolean) : [];
-const escapeDql = (value: string): string => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-
-async function executeDql(query: string): Promise<Row[]> {
-  try {
-    const started = await queryExecutionClient.queryExecute({ body: { query, requestTimeoutMilliseconds: 30000, maxResultRecords: 100 } });
-    const startedRecords: unknown = started.result?.records;
-    if (Array.isArray(startedRecords)) return startedRecords.filter((record): record is Row => record !== null && typeof record === 'object' && !Array.isArray(record));
-    if (!started.requestToken) return [];
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const polled = await queryExecutionClient.queryPoll({ requestToken: started.requestToken, requestTimeoutMilliseconds: 30000 });
-      const polledRecords: unknown = polled.result?.records;
-      if (Array.isArray(polledRecords)) return polledRecords.filter((record): record is Row => record !== null && typeof record === 'object' && !Array.isArray(record));
-      if (polled.state === 'FAILED' || polled.state === 'CANCELLED' || polled.state === 'RESULT_GONE') return [];
-      await new Promise<void>((resolve) => setTimeout(resolve, 250));
-    }
-  } catch { return []; }
-  return [];
-}
-
-async function loadGrailProblemContext(problemId: string): Promise<{ problemRecord: Row; eventRecords: Row[] } | undefined> {
-  const safeId = escapeDql(problemId);
-  const problemRecords = await executeDql(`fetch dt.davis.problems\n| filter not(dt.davis.is_duplicate) and display_id == "${safeId}"\n| fields display_id,event.id,event.name,event.description,event.start,event.end,event.status,event.severity,event.category,dt.analysis.ready,dt.davis.event_ids,dt.davis.affected_users_count,dt.davis.impact_level,root_cause.smartscape_entity,root_cause_entity_id,affected_entity_ids,affected_entity_names\n| limit 1`);
-  const problemRecord = problemRecords[0];
-  if (!problemRecord) return undefined;
-  const eventIds = stringArray(problemRecord['dt.davis.event_ids']);
-  if (!eventIds.length) return { problemRecord, eventRecords: [] };
-  const eventArray = eventIds.slice(0, 60).map((id) => `"${escapeDql(id)}"`).join(', ');
-  const eventRecords = await executeDql(`fetch dt.davis.events\n| filter in(event.id,array(${eventArray}))\n| fields event.id,event.name,event.description,event.start,event.end,event.type,event.category,event.severity,dt.smartscape_source.id,dt.smartscape_source.type,dt.davis.is_rootcause_relevant\n| sort event.start asc\n| limit 80`);
-  return { problemRecord, eventRecords };
-}
-
-function buildCausalAnalysis(problem: { title?: string; impactLevel?: string; rootCauseEntity?: { name?: string; entityId?: { id?: string; type?: string } }; evidenceDetails?: { details?: EvidenceLike[] }; impactAnalysis?: { impacts?: ImpactLike[] } }, context?: { problemRecord: Row; eventRecords: Row[] }) {
-  const title = text(problem.title) || 'Dynatrace problem';
-  const evidence = problem.evidenceDetails?.details ?? [];
-  const rootEvidence = evidence.find((item: EvidenceLike) => item.rootCauseRelevant);
-  const grailRoot = recordValue(context?.problemRecord['root_cause.smartscape_entity']);
-  const rootCauseName = text(grailRoot?.name) || text(problem.rootCauseEntity?.name) || text(rootEvidence?.entity?.name);
-  const rootCauseId = text(grailRoot?.id) || text(problem.rootCauseEntity?.entityId?.id) || text(rootEvidence?.entity?.entityId?.id);
-  const rootCauseType = text(grailRoot?.type) || text(problem.rootCauseEntity?.entityId?.type) || text(rootEvidence?.entity?.entityId?.type);
-  const events = context?.eventRecords ?? [];
-  const causalEvent = events.find((event: Row) => event['dt.davis.is_rootcause_relevant'] === true) ?? events[0];
-  const eventDescriptions = events.map((event: Row) => text(event['event.description'])).filter(Boolean);
-  const evidenceText = evidence.map((item: EvidenceLike) => [text(item.displayName) || text(item.evidenceType), item.entity?.name ? `entity ${item.entity.name}` : '', item.groupingEntity?.name ? `grouped by ${item.groupingEntity.name}` : ''].filter(Boolean).join(' — ')).filter(Boolean);
-  const combinedEvidence = [...new Set([...eventDescriptions, ...evidenceText])].slice(0, 12);
-  const ready = context?.problemRecord['dt.analysis.ready'];
-  const supporting = text(causalEvent?.['event.description']) || text(causalEvent?.['event.name']) || combinedEvidence[0];
-  let probableCause = ''; let remediation = ''; let confidence = '';
-  if (rootCauseName) {
-    const entity = `${rootCauseName}${rootCauseType ? ` (${rootCauseType})` : ''}`;
-    probableCause = `Davis identified ${entity} as the root-cause entity. ${supporting ? `Supporting signal: ${supporting}.` : 'No additional root-cause event description was returned.'}`;
-    remediation = `Investigate ${entity} first, validate the triggering telemetry, and follow the dependency path to the impacted component before remediation.`;
-    confidence = supporting ? 'High' : 'Medium';
-  } else if (causalEvent && text(causalEvent['dt.smartscape_source.id'])) {
-    probableCause = `Davis did not expose a definitive root-cause entity. The strongest root-cause-relevant event points to ${text(causalEvent['dt.smartscape_source.id'])}. ${supporting ? `Signal: ${supporting}.` : ''}`;
-    remediation = `Investigate ${text(causalEvent['dt.smartscape_source.id'])} and correlate its telemetry, logs and dependency path before changing production configuration.`;
-    confidence = 'Medium';
-  } else if (supporting) {
-    probableCause = `Davis did not expose a definitive root-cause entity. Strongest available evidence: ${supporting}. This is evidence, not a confirmed root cause.`;
-    remediation = 'Correlate the affected entity, Davis event timeline and incident logs before assigning a definitive root cause.';
-    confidence = ready === false ? 'Pending Davis analysis' : 'Low';
-  } else {
-    probableCause = 'Davis has not exposed enough causal evidence to determine a root cause yet.';
-    remediation = 'Refresh the problem after Davis analysis completes and validate the underlying telemetry.';
-    confidence = ready === false ? 'Pending Davis analysis' : 'Insufficient evidence';
-  }
-  const impacts = problem.impactAnalysis?.impacts ?? [];
-  const users = impacts.reduce((sum: number, item: ImpactLike) => sum + (item.estimatedAffectedUsers ?? 0), 0);
-  const calls = impacts.reduce((sum: number, item: ImpactLike) => sum + (item.numberOfPotentiallyAffectedServiceCalls ?? 0), 0);
-  const impactSummary = [problem.impactLevel ? `Impact level: ${problem.impactLevel}.` : '', users > 0 ? `Estimated affected users: ${users}.` : '', calls > 0 ? `Potentially affected service calls: ${calls}.` : ''].filter(Boolean).join(' ') || `Impact level: ${problem.impactLevel ?? 'not provided'}.`;
-  return { description: text(context?.problemRecord['event.description']) || combinedEvidence.join('. ') || title, rootCause: rootCauseName || 'No definitive root-cause entity exposed yet', rootCauseEntityId: rootCauseId || undefined, rootCauseEntityType: rootCauseType || undefined, probableCause, impactSummary, remediation, confidence, evidence: combinedEvidence, eventIds: stringArray(context?.problemRecord['dt.davis.event_ids']), analysisReady: ready, affectedUsers: typeof context?.problemRecord['dt.davis.affected_users_count'] === 'number' ? context.problemRecord['dt.davis.affected_users_count'] : undefined, eventNames: [...new Set(events.map((event: Row) => text(event['event.name'])).filter(Boolean))].slice(0, 12), causalEvents: events.filter((event: Row) => event['dt.davis.is_rootcause_relevant'] === true).slice(0, 10).map((event: Row) => ({ id: text(event['event.id']), name: text(event['event.name']), description: text(event['event.description']), entityId: text(event['dt.smartscape_source.id']), entityType: text(event['dt.smartscape_source.type']) })) };
-}
-
-function extractAssistText(value: unknown): string {
+const q = (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+const duration = (a: string, b: string) => {
+  const x = new Date(a).getTime(); const y = b ? new Date(b).getTime() : Date.now();
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return '—';
+  const m = Math.max(0, y - x) / 60000;
+  return m < 60 ? `${m.toFixed(1)} min` : m < 1440 ? `${(m / 60).toFixed(1)} h` : `${(m / 1440).toFixed(1)} d`;
+};
+const extract = (value: unknown): string => {
   if (typeof value === 'string') return value.trim();
-  if (Array.isArray(value)) return value.map(extractAssistText).filter(Boolean).join('\n').trim();
+  if (Array.isArray(value)) return value.map(extract).filter(Boolean).join('\n').trim();
   if (!value || typeof value !== 'object') return '';
-  const record = value as Row;
-  for (const key of ['text', 'answer', 'content', 'message']) {
-    const candidate = extractAssistText(record[key]);
-    if (candidate) return candidate;
+  const r = value as Row;
+  for (const key of ['text', 'answer', 'content', 'message']) { const found = extract(r[key]); if (found) return found; }
+  return Array.isArray(r.tokens) ? r.tokens.map(s).join('').trim() : '';
+};
+
+async function dql(query: string, max = 100): Promise<Row[]> {
+  const started = await queryExecutionClient.queryExecute({ body: { query, requestTimeoutMilliseconds: 30000, maxResultRecords: max } });
+  let result = started.result;
+  for (let i = 0; !result && started.requestToken && i < 30; i += 1) {
+    const polled = await queryExecutionClient.queryPoll({ requestToken: started.requestToken, requestTimeoutMilliseconds: 30000 });
+    result = polled.result;
+    if (!result) await new Promise<void>((resolve) => setTimeout(resolve, 250));
   }
-  const tokens: unknown = record.tokens;
-  return Array.isArray(tokens) ? tokens.map(text).join('').trim() : '';
+  if (!result) throw new Error('Dynatrace problem query did not complete.');
+  return Array.isArray(result.records) ? result.records.filter((r): r is Row => Boolean(r) && typeof r === 'object' && !Array.isArray(r)) : [];
 }
 
-async function enhanceWithAssist(problemId: string, context?: { problemRecord: Row; eventRecords: Row[] }) {
-  if (!context) return undefined;
-  const p = context.problemRecord;
-  const evidence = JSON.stringify({ problem: { id: problemId, title: text(p['event.name']), status: text(p['event.status']), severity: text(p['event.severity']), impact: text(p['dt.davis.impact_level']), start: text(p['event.start']), end: text(p['event.end']), description: text(p['event.description']), rootCause: text(p['root_cause.smartscape_entity']) || text(p.root_cause_entity_id), affectedUsers: text(p['dt.davis.affected_users_count']), affectedEntities: text(p.affected_entity_names) }, events: context.eventRecords.slice(0, 20) }).slice(0, 6200);
-  const prompt = `Create a customer-ready incident RCA for Dynatrace Problem ${problemId} using ONLY the supplied evidence. Never invent facts, root causes, timestamps, deployments, impact or remediation results. Clearly distinguish observed evidence from inference and say "Not proven by available evidence" when appropriate. Return exactly these sections: ## Executive Summary, ## Incident Overview, ## Root Cause Assessment, ## Technical Root-Cause Chain, ## Incident Timeline, ## Past Occurrences & Recurrence Pattern, ## Impact Assessment, ## Immediate Remediation Plan, ## Permanent / Preventive Actions, ## Monitoring & Alerting Recommendations, ## Validation Checklist, ## RCA Confidence & Evidence Gaps. Keep the complete response concise and below 7500 characters.\nEVIDENCE:\n${evidence}`;
-  try {
-    const response = await publicClient.recommenderConversation({ body: { text: prompt }, });
-    const answer = extractAssistText(response);
-    if (!answer) return undefined;
-    return { fullRca: answer };
-  } catch {
-    return undefined;
-  }
+async function load(id: string): Promise<{ problem: Row; events: Row[] }> {
+  const problems = await dql(`fetch dt.davis.problems, from:now()-365d, to:now()\n| filter not(dt.davis.is_duplicate) and display_id == "${q(id)}"\n| fields display_id,event.id,event.name,event.status,event.severity,event.category,event.start,event.end,event.description,dt.davis.event_ids,dt.davis.impact_level,dt.davis.affected_users_count,affected_entity_ids,affected_entity_names,root_cause.smartscape_entity,root_cause_entity_id,dt.analysis.ready\n| limit 1`, 5);
+  if (!problems.length) throw new Error(`Problem ${id} was not found in Dynatrace Grail.`);
+  const problem = problems[0];
+  const ids = Array.isArray(problem['dt.davis.event_ids']) ? problem['dt.davis.event_ids'].map(s).filter(Boolean) : [];
+  if (!ids.length) return { problem, events: [] };
+  const list = ids.slice(0, 80).map((x) => `"${q(x)}"`).join(', ');
+  const events = await dql(`fetch dt.davis.events, from:now()-365d, to:now()\n| filter in(event.id,array(${list}))\n| fields event.id,event.name,event.type,event.status,event.severity,event.category,event.start,event.end,event.description,dt.source_entity,dt.smartscape_source.id,dt.smartscape_source.type,dt.davis.is_rootcause_relevant\n| sort event.start asc\n| limit 80`, 80).catch(() => []);
+  return { problem, events };
 }
 
-export default async function (payload: GetProblemDetailsPayload) {
+function fallback(id: string, p: Row, events: Row[], reason: string): string {
+  const title = s(p['event.name']) || 'Dynatrace Problem';
+  const root = s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id);
+  const signal = events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 4);
+  return `## Executive Summary\n${title} (${id}) was analyzed from retrieved Dynatrace Davis evidence. ${root ? `Root-cause entity exposed by Davis: ${root}.` : 'Not proven by available evidence.'}\n\n## Incident Overview\nStatus: ${s(p['event.status']) || 'Not available'}\nSeverity: ${s(p['event.severity']) || 'Not available'}\nStarted: ${s(p['event.start']) || 'Not available'}\nDuration: ${duration(s(p['event.start']), s(p['event.end']))}\n\n## Root Cause Assessment\n${root ? `Davis exposed ${root} as the root-cause entity.` : 'Not proven by available evidence.'}\n\n## Technical Root-Cause Chain\n${signal.join(' | ') || 'Not proven by available evidence.'}\n\n## Incident Timeline\n${events.length ? events.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available.'}\n\n## Past Occurrences & Recurrence Pattern\nNot available from this request.\n\n## Impact Assessment\nImpact level: ${s(p['dt.davis.impact_level']) || 'Not available'}. Affected users: ${s(p['dt.davis.affected_users_count']) || 'Not available'}.\n\n## Immediate Remediation Plan\nValidate the causal signal and affected dependency before changing production configuration.\n\n## Permanent / Preventive Actions\nNot proposed as completed actions.\n\n## Monitoring & Alerting Recommendations\nMonitor the affected service, response time, errors, dependency health and the Davis causal signal.\n\n## Validation Checklist\nConfirm recovery and verify that the causal metric returns to baseline.\n\n## RCA Confidence & Evidence Gaps\nLow — ${reason}`;
+}
+
+async function assist(id: string, evidence: { problem: Row; events: Row[] }): Promise<string> {
+  const p = evidence.problem;
+  const supplied = JSON.stringify({
+    problem: { id, title: s(p['event.name']), status: s(p['event.status']), severity: s(p['event.severity']), category: s(p['event.category']), start: s(p['event.start']), end: s(p['event.end']), description: s(p['event.description']), rootCause: s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id), impact: s(p['dt.davis.impact_level']), affectedUsers: s(p['dt.davis.affected_users_count']), affectedEntities: s(p.affected_entity_names) },
+    correlatedEvents: evidence.events.slice(0, 60),
+  }).slice(0, 24000);
+  const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze ONLY the supplied evidence. Never invent facts. Clearly distinguish observed evidence from inference and say "Not proven by available evidence" when appropriate. Recommendations are proposals only. Return exactly: 1. Executive Summary 2. Incident Overview 3. Root Cause Assessment 4. Technical Root-Cause Chain 5. Incident Timeline 6. Past Occurrences & Recurrence Pattern 7. Impact Assessment 8. Immediate Remediation Plan 9. Permanent / Preventive Actions 10. Monitoring & Alerting Recommendations 11. Validation Checklist 12. RCA Confidence & Evidence Gaps. Keep it below 7500 characters.\n\nRETRIEVED DYNATRACE EVIDENCE:\n${supplied}`;
+  const response = await publicClient.recommenderConversation({ body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: supplied }, { type: 'instruction', value: 'Analyze the supplied evidence directly. Do not produce a generic access limitation response.' }], annotations: { origin: 'Axis Problem Intelligence RCA', problemId: id } } }) as unknown as Row;
+  if (s(response.status) === 'FAILED') throw new Error('Dynatrace Assist returned FAILED.');
+  const answer = extract(response);
+  if (!answer) throw new Error('Dynatrace Assist returned an empty RCA.');
+  return answer;
+}
+
+export default async function (payload: Payload) {
   if (!payload?.problemId) throw new Error('problemId is required');
-  const problem = await problemsClient.getProblem({ problemId: payload.problemId, fields: 'evidenceDetails,impactAnalysis,recentComments' });
-  const context = await loadGrailProblemContext(payload.problemId);
-  const causal = buildCausalAnalysis(problem, context);
-  const ai = await enhanceWithAssist(payload.problemId, context);
-  const problemAnalysis = { ...causal, fullRca: ai?.fullRca, probableCause: causal.probableCause, remediation: causal.remediation, confidence: causal.confidence, evidence: causal.evidence };
-  return { ...problem, problemAnalysis };
+  if (!/^P-\d+$/.test(payload.problemId)) throw new Error('A valid Dynatrace Problem ID such as P-260948426 is required.');
+  const evidence = await load(payload.problemId);
+  const p = evidence.problem;
+  const root = s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id);
+  let fullRca = ''; let assistStatus = 'SUCCESSFUL'; let assistFallback = false;
+  try { fullRca = await assist(payload.problemId, evidence); } catch (error) { assistFallback = true; assistStatus = error instanceof Error ? error.message : 'Assist request failed'; fullRca = fallback(payload.problemId, p, evidence.events, assistStatus); }
+  const details = evidence.events.slice(0, 80).map((event) => ({ displayName: s(event['event.name']) || s(event['event.type']) || 'Davis event', evidenceType: s(event['event.type']), rootCauseRelevant: event['dt.davis.is_rootcause_relevant'] === true, entity: { name: s(event['dt.smartscape_source.id']), entityId: { id: s(event['dt.smartscape_source.id']), type: s(event['dt.smartscape_source.type']) } } }));
+  return {
+    problemId: payload.problemId,
+    displayId: payload.problemId,
+    problemIdValue: payload.problemId,
+    title: s(p['event.name']) || 'Dynatrace Problem',
+    status: s(p['event.status']) || 'Not available',
+    severityLevel: s(p['event.severity']) || 'Not available',
+    impactLevel: s(p['dt.davis.impact_level']) || 'Not available',
+    startTime: s(p['event.start']),
+    endTime: s(p['event.end']),
+    evidenceDetails: { details },
+    impactAnalysis: { impacts: s(p['dt.davis.affected_users_count']) ? [{ impactType: 'Davis affected users', estimatedAffectedUsers: Number(s(p['dt.davis.affected_users_count'])) || undefined }] : [] },
+    problemAnalysis: {
+      rootCause: root || 'No definitive root-cause entity exposed yet',
+      rootCauseEntityId: root || undefined,
+      probableCause: root ? `Davis exposed ${root} as the root-cause entity.` : 'Not proven by available evidence.',
+      impactSummary: `Impact level: ${s(p['dt.davis.impact_level']) || 'not available'}. Affected users: ${s(p['dt.davis.affected_users_count']) || 'not available'}.`,
+      remediation: 'Validate the causal signal and affected dependency before making a production change.',
+      confidence: root ? 'High' : 'Evidence based',
+      evidence: evidence.events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 12),
+      eventIds: Array.isArray(p['dt.davis.event_ids']) ? p['dt.davis.event_ids'].map(s).filter(Boolean) : [],
+      causalEvents: evidence.events.filter((e) => e['dt.davis.is_rootcause_relevant'] === true).slice(0, 10).map((e) => ({ id: s(e['event.id']), name: s(e['event.name']), description: s(e['event.description']), entityId: s(e['dt.smartscape_source.id']), entityType: s(e['dt.smartscape_source.type']) })),
+      fullRca,
+      assistFallback,
+      assistStatus,
+      analysisReady: p['dt.analysis.ready'],
+      affectedUsers: s(p['dt.davis.affected_users_count']) || undefined,
+    },
+  };
 }
