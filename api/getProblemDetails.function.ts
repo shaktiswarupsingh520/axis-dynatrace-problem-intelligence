@@ -9,7 +9,14 @@ const s = (v: unknown): string => {
   if (typeof v === 'string') return v;
   if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
   if (Array.isArray(v)) return v.map(s).filter(Boolean).join('; ');
-  return typeof v === 'object' ? JSON.stringify(v) : String(v);
+  if (typeof v === 'object') {
+    try {
+      return JSON.stringify(v) ?? '';
+    } catch {
+      return '';
+    }
+  }
+  return '';
 };
 const q = (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 const duration = (a: string, b: string) => {
@@ -91,7 +98,7 @@ export default async function (payload: Payload) {
     startTime: s(p['event.start']),
     endTime: s(p['event.end']),
     evidenceDetails: { details },
-    impactAnalysis: { impacts: s(p['dt.davis.affected_users_count']) ? [{ impactType: 'Davis affected users', estimatedAffectedUsers: Number(s(p['dt.davis.affected_users_count')) || undefined }] : [] },
+    impactAnalysis: { impacts: s(p['dt.davis.affected_users_count']) ? [{ impactType: 'Davis affected users', estimatedAffectedUsers: Number(s(p['dt.davis.affected_users_count'])) || undefined }] : [] },
     problemAnalysis: {
       rootCause: root || 'No definitive root-cause entity exposed yet',
       rootCauseEntityId: root || undefined,
