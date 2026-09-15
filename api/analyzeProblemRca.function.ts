@@ -9,7 +9,8 @@ const s = (v: unknown): string => {
   if (typeof v === 'string') return v;
   if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
   if (Array.isArray(v)) return v.map(s).filter(Boolean).join('; ');
-  return JSON.stringify(v) ?? '';
+  if (typeof v === 'object') return JSON.stringify(v) ?? '';
+  return '';
 };
 const q = (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 const duration = (a: string, b: string) => {
