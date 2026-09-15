@@ -91,7 +91,7 @@ export default async function (payload: Payload) {
     startTime: s(p['event.start']),
     endTime: s(p['event.end']),
     evidenceDetails: { details },
-    impactAnalysis: { impacts: s(p['dt.davis.affected_users_count']) ? [{ impactType: 'Davis affected users', estimatedAffectedUsers: Number(s(p['dt.davis.affected_users_count'])) || undefined }] : [] },
+    impactAnalysis: { impacts: s(p['dt.davis.affected_users_count']) ? [{ impactType: 'Davis affected users', estimatedAffectedUsers: Number(s(p['dt.davis.affected_users_count')) || undefined }] : [] },
     problemAnalysis: {
       rootCause: root || 'No definitive root-cause entity exposed yet',
       rootCauseEntityId: root || undefined,
