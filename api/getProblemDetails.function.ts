@@ -1,4 +1,5 @@
 import { publicClient } from '@dynatrace-sdk/client-davis-copilot';
+import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 type Row = Record<string, unknown>;
@@ -9,7 +10,11 @@ const s = (v: unknown): string => {
   if (typeof v === 'string') return v;
   if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
   if (Array.isArray(v)) return v.map(s).filter(Boolean).join('; ');
-  if (typeof v === 'object') return JSON.stringify(v) ?? '';
+  if (typeof v === 'object') {
+    const o = v as Row;
+    if ('name' in o && s(o.name)) return s(o.name);
+    return JSON.stringify(v) ?? '';
+  }
   return '';
 };
 const q = (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
@@ -53,24 +58,21 @@ function fallback(id: string, p: Row, reason: string, events: Row[]): string {
   return `## Executive Summary\n${title} (${id}) is ${status.toLowerCase()} with severity ${severity}. ${root ? `Davis exposed ${root} as the root-cause entity.` : 'Not proven by available evidence.'}\n\n## Incident Overview\nTitle: ${title}\nStatus: ${status}\nSeverity: ${severity}\nStarted: ${start || 'Not available'}\nDuration: ${duration(start, end)}\n\n## Root Cause Assessment\n${root ? `Davis identified ${root} as the root-cause entity.` : 'Not proven by available evidence.'}\n\n## Technical Root-Cause Chain\n${signal || 'Not proven by available evidence.'}\n\n## Incident Timeline\n${events.length ? events.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available.'}\n\n## Past Occurrences & Recurrence Pattern\nNot available from this RCA request.\n\n## Impact Assessment\nImpact level: ${impact}. Affected-user count: ${s(p['dt.davis.affected_users_count']) || 'Not available'}.\n\n## Immediate Remediation Plan\nValidate the identified Davis evidence and affected dependency before making a production change.\n\n## Permanent / Preventive Actions\nNot proposed as completed actions; validate the causal signal first.\n\n## Monitoring & Alerting Recommendations\nMonitor the affected service, response time, errors, dependency health and the Davis causal signal.\n\n## Validation Checklist\nConfirm recovery, verify the causal metric returns to baseline, and verify that the problem does not recur.\n\n## RCA Confidence & Evidence Gaps\nLow — Dynatrace Assist did not return the generated RCA. ${reason}`;
 }
 
-async function loadEvidence(id: string): Promise<{ problem: Row; events: Row[] }> {
-  const pid = q(id);
-  const problems = await dql(`fetch dt.davis.problems, from:now()-365d, to:now()\n| filter not(dt.davis.is_duplicate) and display_id == "${pid}"\n| fields display_id,event.id,event.name,event.status,event.severity,event.category,event.start,event.end,event.description,dt.davis.event_ids,dt.davis.impact_level,dt.davis.affected_users_count,affected_entity_ids,affected_entity_names,root_cause.smartscape_entity,root_cause_entity_id\n| limit 1`, 5);
+async function load(id: string): Promise<{ problem: Row; events: Row[] }> {
+  await problemsClient.getProblem({ problemId: id, fields: 'evidenceDetails,impactAnalysis,recentComments' }).catch(() => undefined);
+  const problems = await dql(`fetch dt.davis.problems, from:now()-365d, to:now()\n| filter not(dt.davis.is_duplicate) and display_id == "${q(id)}"\n| fields display_id,event.id,event.name,event.status,event.severity,event.category,event.start,event.end,event.description,dt.davis.event_ids,dt.davis.impact_level,dt.davis.affected_users_count,affected_entity_ids,affected_entity_names,root_cause.smartscape_entity,root_cause_entity_id,dt.analysis.ready\n| limit 1`, 5);
   if (!problems.length) throw new Error(`Problem ${id} was not found in Dynatrace Grail.`);
   const problem = problems[0];
-  const eventIds = Array.isArray(problem['dt.davis.event_ids']) ? problem['dt.davis.event_ids'].map(s).filter(Boolean) : [];
-  if (!eventIds.length) return { problem, events: [] };
-  const list = eventIds.slice(0, 80).map((x) => `"${q(x)}"`).join(', ');
+  const ids = Array.isArray(problem['dt.davis.event_ids']) ? problem['dt.davis.event_ids'].map(s).filter(Boolean) : [];
+  if (!ids.length) return { problem, events: [] };
+  const list = ids.slice(0, 80).map((x) => `"${q(x)}"`).join(', ');
   const events = await dql(`fetch dt.davis.events, from:now()-365d, to:now()\n| filter in(event.id,array(${list}))\n| fields event.id,event.name,event.type,event.status,event.severity,event.category,event.start,event.end,event.description,dt.source_entity,dt.smartscape_source.id,dt.smartscape_source.type,dt.davis.is_rootcause_relevant\n| sort event.start asc\n| limit 80`, 80).catch(() => []);
   return { problem, events };
 }
 
-async function askAssist(id: string, evidence: { problem: Row; events: Row[] }): Promise<string> {
+async function assist(id: string, evidence: { problem: Row; events: Row[] }): Promise<string> {
   const p = evidence.problem;
-  const compactEvidence = JSON.stringify({
-    problem: { id, title: s(p['event.name']), status: s(p['event.status']), severity: s(p['event.severity']), category: s(p['event.category']), start: s(p['event.start']), end: s(p['event.end']), description: s(p['event.description']), rootCause: s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id), impact: s(p['dt.davis.impact_level']), affectedUsers: s(p['dt.davis.affected_users_count']), affectedEntities: s(p.affected_entity_names) },
-    correlatedEvents: evidence.events.slice(0, 60),
-  }).slice(0, 24000);
+  const compactEvidence = JSON.stringify({ problem: { id, title: s(p['event.name']), status: s(p['event.status']), severity: s(p['event.severity']), category: s(p['event.category']), start: s(p['event.start']), end: s(p['event.end']), description: s(p['event.description']), rootCause: s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id), impact: s(p['dt.davis.impact_level']), affectedUsers: s(p['dt.davis.affected_users_count']), affectedEntities: s(p.affected_entity_names) }, correlatedEvents: evidence.events.slice(0, 60) }).slice(0, 24000);
   const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze ONLY the retrieved evidence below. Never invent facts, root causes, timestamps, deployments, impact, recurrence or completed remediation. Clearly distinguish observed evidence from inference and say "Not proven by available evidence" when appropriate. Recommendations are proposals only. Return exactly these sections: 1. Executive Summary 2. Incident Overview 3. Root Cause Assessment 4. Technical Root-Cause Chain 5. Incident Timeline 6. Past Occurrences & Recurrence Pattern 7. Impact Assessment 8. Immediate Remediation Plan 9. Permanent / Preventive Actions 10. Monitoring & Alerting Recommendations 11. Validation Checklist 12. RCA Confidence & Evidence Gaps. Keep the response concise and below 7500 characters.\n\nRETRIEVED DYNATRACE EVIDENCE:\n${compactEvidence}`;
   const response = await publicClient.recommenderConversation({ body: { text: prompt, context: [{ type: 'document-retrieval', value: 'disabled' }, { type: 'supplementary', value: compactEvidence }, { type: 'instruction', value: 'Analyze the supplied evidence directly. Do not produce a generic access limitation response.' }], annotations: { origin: 'Axis Problem Intelligence RCA', problemId: id } } }) as unknown as Row;
   const status = s(response.status);
@@ -83,9 +85,9 @@ async function askAssist(id: string, evidence: { problem: Row; events: Row[] }):
 export default async function (payload: Payload) {
   if (!payload?.problemId) throw new Error('problemId is required');
   if (!/^P-\d+$/.test(payload.problemId)) throw new Error('A valid Dynatrace Problem ID such as P-260948426 is required.');
-  const evidence = await loadEvidence(payload.problemId);
+  const evidence = await load(payload.problemId);
   let analysis = ''; let assistStatus = 'SUCCESSFUL'; let assistFallback = false;
-  try { analysis = await askAssist(payload.problemId, evidence); } catch (error) { assistFallback = true; assistStatus = error instanceof Error ? error.message : 'Assist request failed'; analysis = fallback(payload.problemId, evidence.problem, assistStatus, evidence.events); }
+  try { analysis = await assist(payload.problemId, evidence); } catch (error) { assistFallback = true; assistStatus = error instanceof Error ? error.message : 'Assist request failed'; analysis = fallback(payload.problemId, evidence.problem, assistStatus, evidence.events); }
   const p = evidence.problem;
   const rootData = p['root_cause.smartscape_entity'];
   const root = typeof rootData === 'object' && rootData !== null ? s((rootData as Row).name) || s((rootData as Row).id) : s(rootData) || s(p.root_cause_entity_id);
