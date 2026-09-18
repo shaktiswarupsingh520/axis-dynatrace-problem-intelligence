@@ -21,7 +21,7 @@ const s = (v: unknown): string => {
   if (typeof v === 'object') {
     const o = v as Row;
     if ('name' in o && s(o.name)) return s(o.name);
-    return JSON.stringify(v) ?? '';
+    try { return JSON.stringify(v) ?? ''; } catch { return '[Unserializable]'; }
   }
   return '';
 };
@@ -160,8 +160,42 @@ async function loadNativeProblem(id: string): Promise<NativeProblemLookup> {
 
 async function load(id: string): Promise<Evidence> {
   const nativeProblem = await loadNativeProblem(id);
-  const problems = await dql(`fetch dt.davis.problems, from:now()-365d, to:now()\n| filter not(dt.davis.is_duplicate) and display_id == "${q(id)}"\n| fields display_id,event.id,event.name,event.status,event.severity,event.category,event.start,event.end,event.description,dt.davis.event_ids,dt.davis.impact_level,dt.davis.affected_users_count,affected_entity_ids,affected_entity_names,root_cause.smartscape_entity,root_cause_entity_id,dt.analysis.ready\n| limit 1`, 5);
-  if (!problems.length) throw new Error(`Problem ${id} was not found in Dynatrace Grail.`);
+  let problems: Row[] = [];
+  try {
+    problems = await dql(`fetch dt.davis.problems, from:now()-365d, to:now()
+| filter not(dt.davis.is_duplicate) and display_id == "${q(id)}"
+| fields display_id,event.id,event.name,event.status,event.severity,event.category,event.start,event.end,event.description,dt.davis.event_ids,dt.davis.impact_level,dt.davis.affected_users_count,affected_entity_ids,affected_entity_names,root_cause.smartscape_entity,root_cause_entity_id,dt.analysis.ready
+| limit 1`, 5);
+  } catch {
+    problems = [];
+  }
+
+  let problem = problems[0];
+  if (!problem && nativeProblem.details && typeof nativeProblem.details === 'object' && !Array.isArray(nativeProblem.details)) {
+    const native = nativeProblem.details as Row;
+    const root = resolveNativeRootCause(native);
+    const affected = Array.isArray(native.affectedEntities) ? native.affectedEntities : [];
+    problem = {
+      display_id: s(native.displayId) || id,
+      'event.id': s(native.problemId) || id,
+      'event.name': s(native.title) || 'Dynatrace Problem',
+      'event.status': s(native.status),
+      'event.severity': s(native.severityLevel),
+      'event.category': '',
+      'event.start': typeof native.startTime === 'number' ? new Date(native.startTime).toISOString() : s(native.startTime),
+      'event.end': typeof native.endTime === 'number' && native.endTime >= 0 ? new Date(native.endTime).toISOString() : s(native.endTime),
+      'event.description': '',
+      'dt.davis.event_ids': [],
+      'dt.davis.impact_level': s(native.impactLevel),
+      'dt.davis.affected_users_count': '',
+      affected_entity_ids: [],
+      affected_entity_names: affected.map((e) => s(e)).filter(Boolean),
+      'dt.analysis.ready': true,
+      root_cause: root ? { name: root.name, id: root.id, type: root.type } : null,
+      root_cause_entity_id: root?.id || '',
+    };
+  }
+  if (!problem) throw new Error(`Problem ${id} was not found in Dynatrace Problems API or Grail.`);
 
   const problem = problems[0];
   const affectedIds = Array.isArray(problem.affected_entity_ids) ? problem.affected_entity_ids.map(s).filter(Boolean) : [s(problem.affected_entity_ids)].filter(Boolean);
