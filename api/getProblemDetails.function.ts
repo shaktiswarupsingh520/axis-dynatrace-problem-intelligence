@@ -261,7 +261,11 @@ export default async function (payload: Payload) {
   const resolvedRoot = nativeApiAvailable ? nativeRoot : (nativeRoot || (grailRoot.name ? grailRoot : null));
   const root = resolvedRoot?.name || '';
   const rootEntityId = resolvedRoot?.id || '';
-  const rootEntityType = resolvedRoot?.type || '';
+  // Davis may return rootCauseEntity as a name/id string rather than a typed
+  // entity object. The entity type is descriptive metadata, so enrich it from
+  // the already-retrieved Grail entity record without changing the authoritative
+  // Davis root-cause name or ID.
+  const rootEntityType = resolvedRoot?.type || grailRoot.type || '';
   const probableEvidence = evidence.events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 12);
   const currentId = payload.problemId;
   const occurrences = evidence.history.filter((row) => s(row.display_id) !== currentId);
