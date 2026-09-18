@@ -256,6 +256,40 @@ describe('getProblemDetails.function', () => {
     expect(result.problemAnalysis?.probableCause).toContain('This is evidence, not a confirmed root cause');
   });
 
+  it('returns JSON-safe RCA data when DQL contains BigInt values', async () => {
+    mockedGetProblems.mockResolvedValue({
+      problems: [{
+        problemId: 'P-800',
+        title: 'Serialization test',
+        rootCauseEntity: null,
+        evidenceDetails: { details: [] },
+        impactAnalysis: { impacts: [] },
+      }],
+    } as never);
+
+    mockedQueryExecute.mockImplementation(async ({ body }) => {
+      if (body.query.includes('fetch dt.davis.events')) {
+        return { state: 'SUCCEEDED', result: { records: [] } } as never;
+      }
+      return {
+        state: 'SUCCEEDED',
+        result: {
+          records: [{
+            display_id: 'P-800',
+            'event.name': 'Serialization test',
+            'dt.analysis.ready': true,
+            'dt.davis.event_ids': [],
+            syntheticBigInt: 123n,
+          }],
+        },
+      } as never;
+    });
+
+    const result = await getProblemDetailsFunction({ problemId: 'P-800' });
+
+    expect(() => JSON.stringify(result)).not.toThrow();
+  });
+
   it('rejects an empty problem id', async () => {
     await expect(getProblemDetailsFunction({ problemId: '' })).rejects.toThrow(
       'problemId is required',
