@@ -86,8 +86,47 @@ function fallback(id: string, p: Row, reason: string, events: Row[], history: Ro
   return `## Executive Summary\n${title} (${id}) is ${status.toLowerCase()} with severity ${severity}. ${root ? `Davis exposed ${root} as the root-cause entity.` : 'Not proven by available evidence.'}\n\n## Incident Overview\nTitle: ${title}\nStatus: ${status}\nSeverity: ${severity}\nStarted: ${start || 'Not available'}\nDuration: ${duration(start, end)}\n\n## Root Cause Assessment\n${root ? `Davis identified ${root} as the root-cause entity.` : 'Not proven by available evidence.'}\n\n## Technical Root-Cause Chain\n${signal || 'Not proven by available evidence.'}\n\n## Incident Timeline\n${snapshots.length ? snapshots.slice(0, 12).map((e) => `${s(e.timestamp) || 'Time unavailable'} — ${snapshotStatus(e)}`).join('\n') : events.length ? events.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available.'}\n\n## Past Occurrences & Recurrence Pattern\n${history.length ? `${history.length} matching Davis occurrence(s) retrieved from the last 30 days.` : 'No matching past occurrences were retrieved from the last 30 days.'}\n\n## Impact Assessment\nImpact level: ${impact}. Affected-user count: ${s(p['dt.davis.affected_users_count']) || 'Not available'}. Incident logs retrieved: ${logs.length}.\n\n## Immediate Remediation Plan\nValidate the identified Davis evidence and affected dependency before making a production change.\n\n## Permanent / Preventive Actions\nNot proposed as completed actions; validate the causal signal first.\n\n## Monitoring & Alerting Recommendations\nMonitor the affected service, response time, errors, dependency health and the Davis causal signal.\n\n## Validation Checklist\nConfirm recovery, verify the causal metric returns to baseline, and verify that the problem does not recur.\n\n## RCA Confidence & Evidence Gaps\nEvidence based — Dynatrace Assist did not return the generated RCA. ${reason}`;
 }
 
+interface NativeRootCause {
+  name: string;
+  id: string;
+  type: string;
+}
+
+interface NativeProblemLookup {
+  details: unknown;
+  available: boolean;
+}
+
+function resolveNativeRootCause(details: unknown): NativeRootCause | null {
+  if (!details || typeof details !== 'object' || Array.isArray(details)) return null;
+  const row = details as Row;
+  const raw = row.rootCauseEntity;
+  const fallbackId = s(row.rootCauseEntityId);
+  if (typeof raw === 'string' || typeof raw === 'number') {
+    const name = s(raw);
+    return name ? { name, id: fallbackId, type: '' } : null;
+  }
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const entity = raw as Row;
+    const name = s(entity.name) || s(entity.id);
+    const id = s(entity.id) || fallbackId;
+    const type = s(entity.type);
+    return name ? { name, id, type } : null;
+  }
+  return fallbackId ? { name: fallbackId, id: fallbackId, type: '' } : null;
+}
+
+async function loadNativeProblem(id: string): Promise<NativeProblemLookup> {
+  try {
+    const details = await problemsClient.getProblem({ problemId: id, fields: 'evidenceDetails,impactAnalysis,recentComments' });
+    return { details, available: true };
+  } catch {
+    return { details: undefined, available: false };
+  }
+}
+
 async function load(id: string): Promise<Evidence> {
-  await problemsClient.getProblem({ problemId: id, fields: 'evidenceDetails,impactAnalysis,recentComments' }).catch(() => undefined);
+  const nativeProblem = await loadNativeProblem(id);
   const problems = await dql(`fetch dt.davis.problems, from:now()-365d, to:now()\n| filter not(dt.davis.is_duplicate) and display_id == "${q(id)}"\n| fields display_id,event.id,event.name,event.status,event.severity,event.category,event.start,event.end,event.description,dt.davis.event_ids,dt.davis.impact_level,dt.davis.affected_users_count,affected_entity_ids,affected_entity_names,root_cause.smartscape_entity,root_cause_entity_id,dt.analysis.ready\n| limit 1`, 5);
   if (!problems.length) throw new Error(`Problem ${id} was not found in Dynatrace Grail.`);
 
@@ -127,7 +166,18 @@ async function load(id: string): Promise<Evidence> {
     zoneRows = zoneResults.flat();
   }
 
-  return { problem, events, logs, history, snapshots, managementZones: flattenZones(zoneRows) };
+  return {
+    problem: {
+      ...problem,
+      __nativeRootCauseEntity: resolveNativeRootCause(nativeProblem.details),
+      __nativeProblemApiAvailable: nativeProblem.available,
+    },
+    events,
+    logs,
+    history,
+    snapshots,
+    managementZones: flattenZones(zoneRows),
+  };
 }
 
 async function assist(id: string, evidence: Evidence): Promise<string> {
@@ -143,7 +193,7 @@ async function assist(id: string, evidence: Evidence): Promise<string> {
       end: s(p['event.end']),
       duration: duration(s(p['event.start']), s(p['event.end'])),
       description: s(p['event.description']),
-      rootCause: s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id),
+      rootCause: nativeRoot?.name || grailRoot.name || '',
       impact: s(p['dt.davis.impact_level']),
       affectedUsers: s(p['dt.davis.affected_users_count']),
       affectedEntities: s(p.affected_entity_names) || s(p.affected_entity_ids),
@@ -190,9 +240,17 @@ export default async function (payload: Payload) {
 
   const p = evidence.problem;
   const rootData = p['root_cause.smartscape_entity'];
-  const root = typeof rootData === 'object' && rootData !== null ? s((rootData as Row).name) || s((rootData as Row).id) : s(rootData) || s(p.root_cause_entity_id);
-  const rootEntityId = typeof rootData === 'object' && rootData !== null ? s((rootData as Row).id) || s(p.root_cause_entity_id) : s(p.root_cause_entity_id) || (root ? root : '');
-  const rootEntityType = typeof rootData === 'object' && rootData !== null ? s((rootData as Row).type) : '';
+  const nativeRoot = p.__nativeRootCauseEntity as NativeRootCause | null | undefined;
+  const nativeApiAvailable = p.__nativeProblemApiAvailable === true;
+  const grailRoot = typeof rootData === 'object' && rootData !== null
+    ? { name: s((rootData as Row).name) || s((rootData as Row).id), id: s((rootData as Row).id) || s(p.root_cause_entity_id), type: s((rootData as Row).type) }
+    : { name: s(rootData), id: s(p.root_cause_entity_id), type: '' };
+  // The native Problems API is authoritative. If it was successfully retrieved and
+  // explicitly has no root cause, do not let a secondary Grail field manufacture one.
+  const resolvedRoot = nativeApiAvailable ? nativeRoot : (nativeRoot || (grailRoot.name ? grailRoot : null));
+  const root = resolvedRoot?.name || '';
+  const rootEntityId = resolvedRoot?.id || '';
+  const rootEntityType = resolvedRoot?.type || '';
   const probableEvidence = evidence.events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 12);
   const currentId = payload.problemId;
   const occurrences = evidence.history.filter((row) => s(row.display_id) !== currentId);
