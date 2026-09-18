@@ -193,7 +193,13 @@ async function assist(id: string, evidence: Evidence): Promise<string> {
       end: s(p['event.end']),
       duration: duration(s(p['event.start']), s(p['event.end'])),
       description: s(p['event.description']),
-      rootCause: nativeRoot?.name || grailRoot.name || '',
+      rootCause: (() => {
+        const native = p.__nativeRootCauseEntity as NativeRootCause | null | undefined;
+        if (p.__nativeProblemApiAvailable === true) return native?.name || '';
+        return native?.name || (typeof p['root_cause.smartscape_entity'] === 'object' && p['root_cause.smartscape_entity'] !== null
+          ? s((p['root_cause.smartscape_entity'] as Row).name) || s((p['root_cause.smartscape_entity'] as Row).id)
+          : s(p['root_cause.smartscape_entity']) || s(p.root_cause_entity_id));
+      })(),
       impact: s(p['dt.davis.impact_level']),
       affectedUsers: s(p['dt.davis.affected_users_count']),
       affectedEntities: s(p.affected_entity_names) || s(p.affected_entity_ids),
