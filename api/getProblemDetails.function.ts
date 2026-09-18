@@ -26,6 +26,20 @@ const s = (v: unknown): string => {
   return '';
 };
 const q = (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+function jsonSafe(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (typeof value === 'bigint') return value.toString();
+  if (value instanceof Date) return value.toISOString();
+  if (Array.isArray(value)) return value.map((item) => jsonSafe(item, seen));
+  if (value && typeof value === 'object') {
+    if (seen.has(value)) return '[Circular]';
+    seen.add(value);
+    const output: Row = {};
+    for (const [key, item] of Object.entries(value)) output[key] = jsonSafe(item, seen);
+    return output;
+  }
+  return value;
+}
 const duration = (a: string, b: string) => {
   const x = new Date(a).getTime(); const y = b ? new Date(b).getTime() : Date.now();
   if (!Number.isFinite(x) || !Number.isFinite(y)) return '—';
@@ -283,6 +297,13 @@ export default async function (payload: Payload) {
   const probableEvidence = evidence.events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 12);
   const currentId = payload.problemId;
   const occurrences = evidence.history.filter((row) => s(row.display_id) !== currentId);
+  // App functions must return JSON-serializable data. DQL/SDK records can contain
+  // BigInt or other non-JSON values, which would otherwise surface as HTTP 540
+  // during result serialization even when the function logic completed.
+  const safeOccurrences = jsonSafe(occurrences) as Row[];
+  const safeLogs = jsonSafe(evidence.logs) as Row[];
+  const safeHistoricalOccurrences = jsonSafe(occurrences.slice(0, 100)) as Row[];
+  const safeTimelineSnapshots = jsonSafe(evidence.snapshots) as Row[];
 
   return {
     problemId: currentId,
@@ -297,7 +318,7 @@ export default async function (payload: Payload) {
     recurrenceWindow: '30d',
     managementZones: evidence.managementZones,
     occurrenceCount: occurrences.length,
-    occurrences,
+    occurrences: safeOccurrences,
     title: s(p['event.name']) || 'Dynatrace Problem',
     status: s(p['event.status']) || 'Not available',
     severityLevel: s(p['event.severity']) || 'Not available',
@@ -338,9 +359,9 @@ export default async function (payload: Payload) {
       assistStatus,
       analysisReady: p['dt.analysis.ready'],
       affectedUsers: s(p['dt.davis.affected_users_count']) || undefined,
-      logs: evidence.logs.slice(0, 100),
-      historicalOccurrences: occurrences.slice(0, 100),
-      timelineSnapshots: evidence.snapshots.slice(0, 80),
+      logs: safeLogs.slice(0, 100),
+      historicalOccurrences: safeHistoricalOccurrences,
+      timelineSnapshots: safeTimelineSnapshots.slice(0, 80),
       managementZones: evidence.managementZones,
     },
   };
