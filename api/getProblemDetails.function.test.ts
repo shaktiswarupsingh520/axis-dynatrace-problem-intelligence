@@ -4,7 +4,7 @@ import getProblemDetailsFunction from './getProblemDetails.function';
 
 jest.mock('@dynatrace-sdk/client-classic-environment-v2', () => ({
   problemsClient: {
-    getProblem: jest.fn(),
+    getProblems: jest.fn(),
   },
 }));
 
@@ -16,7 +16,7 @@ jest.mock('@dynatrace-sdk/client-query', () => ({
 }));
 
 describe('getProblemDetails.function', () => {
-  const mockedGetProblem = jest.mocked(problemsClient.getProblem);
+  const mockedGetProblemss = jest.mocked(problemsClient.getProblems);
   const mockedQueryExecute = jest.mocked(queryExecutionClient.queryExecute);
 
   beforeEach(() => {
@@ -94,12 +94,15 @@ describe('getProblemDetails.function', () => {
         ],
       },
     };
-    mockedGetProblem.mockResolvedValue(problem as never);
+    mockedGetProblems.mockResolvedValue({ problems: [problem as never] });
 
     const result = await getProblemDetailsFunction({ problemId: 'P-123' });
 
-    expect(mockedGetProblem).toHaveBeenCalledWith({
-      problemId: 'P-123',
+    expect(mockedGetProblems).toHaveBeenCalledWith({
+      from: 'now-365d',
+      to: 'now',
+      pageSize: 1,
+      problemSelector: 'displayId("P-123")',
       fields: 'evidenceDetails,impactAnalysis,recentComments',
     });
     expect(mockedQueryExecute).toHaveBeenCalled();
@@ -125,7 +128,7 @@ describe('getProblemDetails.function', () => {
 
 
   it('prefers the native Davis root-cause name over a Grail entity id or secondary name', async () => {
-    mockedGetProblem.mockResolvedValue({
+    mockedGetProblems.mockResolvedValue({
       problemId: 'P-789',
       title: 'Failure rate increase',
       rootCauseEntity: 'hermes',
@@ -171,7 +174,7 @@ describe('getProblemDetails.function', () => {
   });
 
   it('does not fall back to Grail when native Davis explicitly reports no root cause', async () => {
-    mockedGetProblem.mockResolvedValue({
+    mockedGetProblems.mockResolvedValue({
       problemId: 'P-790',
       title: 'Failure rate increase',
       rootCauseEntity: null,
@@ -215,7 +218,7 @@ describe('getProblemDetails.function', () => {
   });
 
   it('does not invent a root cause when Dynatrace has not exposed one', async () => {
-    mockedGetProblem.mockResolvedValue({
+    mockedGetProblems.mockResolvedValue({
       problemId: 'P-456',
       title: 'Failure rate increase',
       impactLevel: 'SERVICES',
@@ -255,6 +258,6 @@ describe('getProblemDetails.function', () => {
     await expect(getProblemDetailsFunction({ problemId: '' })).rejects.toThrow(
       'problemId is required',
     );
-    expect(mockedGetProblem).not.toHaveBeenCalled();
+    expect(mockedGetProblems).not.toHaveBeenCalled();
   });
 });
