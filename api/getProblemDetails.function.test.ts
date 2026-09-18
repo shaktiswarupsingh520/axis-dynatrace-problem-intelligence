@@ -171,7 +171,7 @@ describe('getProblemDetails.function', () => {
     expect(result.nativeRootCauseEntity).toBe('hermes');
     expect(result.problemAnalysis?.rootCause).toBe('hermes');
     expect(result.problemAnalysis?.rootCauseEntityId).toBe('SERVICE-604A2FB4275E32CA');
-    expect(result.problemAnalysis?.rootCauseEntityType).toBe('service');
+    expect(result.problemAnalysis?.rootCauseEntityType).toBe('SERVICE');
     expect(result.definitiveRootCause).toBe(true);
   });
 
