@@ -390,8 +390,6 @@ export default async function (payload: Payload) {
     assistStatus = error instanceof Error ? error.message : 'Assist request failed';
   }
   const probableEvidence = evidence.events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 12);
-  const currentId = payload.problemId;
-  const occurrences = evidence.history.filter((row) => s(row.display_id) !== currentId);
   // App functions must return JSON-serializable data. DQL/SDK records can contain
   // BigInt or other non-JSON values, which would otherwise surface as HTTP 540
   // during result serialization even when the function logic completed.
