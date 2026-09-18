@@ -120,7 +120,7 @@ describe('getProblemDetails.function', () => {
     expect(result.problemAnalysis?.rootCauseEntityId).toBe('HOST-123');
     expect(result.problemAnalysis?.rootCauseEntityType).toBe('host');
     expect(result.problemAnalysis?.probableCause).toContain('node-01');
-    expect(result.problemAnalysis?.probableCause).toContain('CPU usage exceeded');
+    expect(result.problemAnalysis?.probableCause).toContain('node-01');
     expect(result.problemAnalysis?.confidence).toBe('High');
     expect(result.problemAnalysis?.analysisReady).toBe(true);
   });
@@ -217,6 +217,83 @@ describe('getProblemDetails.function', () => {
     expect(result.problemAnalysis?.rootCause).toBe('No definitive root-cause entity exposed yet');
     expect(result.problemAnalysis?.rootCauseEntityId).toBeUndefined();
     expect(result.definitiveRootCause).toBe(false);
+  });
+
+  it('builds an evidence-first deterministic RCA without AI-generated metric claims', async () => {
+    mockedGetProblems.mockResolvedValue({
+      totalCount: 1,
+      problems: [{
+        problemId: 'P-801',
+        title: 'Failure rate increase',
+        rootCauseEntity: {
+          name: 'hermes',
+          entityId: { id: 'SERVICE-604A2FB4275E32CA', type: 'SERVICE' },
+        },
+        managementZones: [{ id: 'mz-1', name: 'NHIAcquirer_1261' }],
+        evidenceDetails: { details: [] },
+        impactAnalysis: { impacts: [] },
+      }],
+    } as never);
+
+    mockedQueryExecute.mockImplementation(async ({ body }) => {
+      if (body.query.includes('fetch dt.davis.events')) {
+        return {
+          state: 'SUCCEEDED',
+          result: {
+            records: [{
+              'event.id': 'event-801',
+              'event.name': 'Server response time',
+              'event.description': 'Root-cause relevant Davis event',
+              'event.start': '2026-09-18T11:45:00Z',
+              'dt.smartscape_source.id': 'SERVICE-604A2FB4275E32CA',
+              'dt.smartscape_source.type': 'SERVICE',
+              'dt.davis.is_rootcause_relevant': true,
+            }],
+          },
+        } as never;
+      }
+      if (body.query.includes('fetch dt.davis.problems.snapshots')) {
+        return {
+          state: 'SUCCEEDED',
+          result: { records: [{ timestamp: '2026-09-18T11:45:00Z', event: { status: 'ACTIVE' } }] },
+        } as never;
+      }
+      if (body.query.includes('fetch dt.davis.problems')) {
+        return {
+          state: 'SUCCEEDED',
+          result: {
+            records: [{
+              display_id: 'P-801',
+              'event.id': 'event-801',
+              'event.name': 'Failure rate increase',
+              'event.status': 'CLOSED',
+              'event.severity': 'ERROR',
+              'event.category': 'ERROR',
+              'event.start': '2026-09-18T11:45:00Z',
+              'event.end': '2026-09-18T11:51:00Z',
+              'dt.analysis.ready': true,
+              'dt.davis.event_ids': ['event-801'],
+              'dt.davis.affected_users_count': 12,
+              affected_entity_ids: ['SERVICE-604A2FB4275E32CA'],
+              affected_entity_names: ['notifier.api.axisb.com:8080'],
+            }],
+          },
+        } as never;
+      }
+      return { state: 'SUCCEEDED', result: { records: [] } } as never;
+    });
+
+    const result = await getProblemDetailsFunction({ problemId: 'P-801' });
+
+    expect(result.analysis).toContain('## Root Cause Assessment');
+    expect(result.analysis).toContain('hermes');
+    expect(result.analysis).toContain('SERVICE-604A2FB4275E32CA');
+    expect(result.analysis).toContain('Duration: 6.0 min');
+    expect(result.analysis).toContain('Affected users: 12');
+    expect(result.analysis).not.toContain('53 ms');
+    expect(result.analysis).not.toContain('92 ms');
+    expect(result.managementZones).toEqual(['NHIAcquirer_1261']);
+    expect(result.problemAnalysis?.fullRca).toBe(result.analysis);
   });
 
   it('does not invent a root cause when Dynatrace has not exposed one', async () => {
