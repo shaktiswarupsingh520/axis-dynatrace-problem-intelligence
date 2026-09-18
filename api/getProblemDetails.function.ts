@@ -88,7 +88,7 @@ function snapshotStatus(snapshot: Row): string {
   return s(event.status_transition) || s(event.status) || 'Davis state';
 }
 
-function fallback(id: string, p: Row, reason: string, events: Row[], history: Row[], logs: Row[], snapshots: Row[]): string {
+function fallbackRca(id: string, p: Row, reason: string, events: Row[], history: Row[], logs: Row[], snapshots: Row[]): string {
   const title = s(p['event.name']) || 'Dynatrace Problem';
   const status = s(p['event.status']) || 'Not available';
   const severity = s(p['event.severity']) || 'Not available';
