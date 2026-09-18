@@ -335,6 +335,7 @@ describe('getProblemDetails.function', () => {
 
   it('returns JSON-safe RCA data when DQL contains BigInt values', async () => {
     mockedGetProblems.mockResolvedValue({
+      totalCount: 1,
       problems: [{
         problemId: 'P-800',
         title: 'Serialization test',
