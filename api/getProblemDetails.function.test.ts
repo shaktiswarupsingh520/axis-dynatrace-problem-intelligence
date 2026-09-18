@@ -131,8 +131,10 @@ describe('getProblemDetails.function', () => {
     mockedGetProblems.mockResolvedValue({ problems: [{
       problemId: 'P-789',
       title: 'Failure rate increase',
-      rootCauseEntity: 'hermes',
-      rootCauseEntityId: 'SERVICE-604A2FB4275E32CA',
+      rootCauseEntity: {
+        name: 'hermes',
+        entityId: { id: 'SERVICE-604A2FB4275E32CA', type: 'SERVICE' },
+      },
       evidenceDetails: { details: [] },
       impactAnalysis: { impacts: [] },
     }] } as never);
@@ -245,7 +247,7 @@ describe('getProblemDetails.function', () => {
           },
         ],
       },
-    }] } as never);
+    } as never);
 
     const result = await getProblemDetailsFunction({ problemId: 'P-456' });
 
