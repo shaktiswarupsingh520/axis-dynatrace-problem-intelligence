@@ -101,7 +101,16 @@ export default async function (payload: Payload) {
     .filter(Boolean)
     .slice(0, 12);
 
-  const safeOccurrences = jsonSafe(occurrences) as Row[];
+  const occurrenceRecords = occurrences.map((row) => ({
+    problemId: s(row.display_id),
+    title: s(row['event.name']) || 'Dynatrace Problem',
+    status: s(row['event.status']) || 'Not available',
+    severity: s(row['event.severity']) || 'Not available',
+    start: s(row['event.start']),
+    end: s(row['event.end']),
+    duration: duration(s(row['event.start']), s(row['event.end'])),
+  }));
+  const safeOccurrences = jsonSafe(occurrenceRecords) as Row[];
   const safeLogs = jsonSafe(evidence.logs) as Row[];
   const safeHistoricalOccurrences = jsonSafe(occurrences.slice(0, 100)) as Row[];
   const safeTimelineSnapshots = jsonSafe(evidence.snapshots) as Row[];
