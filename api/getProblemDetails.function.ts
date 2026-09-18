@@ -133,7 +133,7 @@ async function loadNativeProblem(id: string): Promise<NativeProblemLookup> {
       fields: 'evidenceDetails,impactAnalysis,recentComments',
     });
     const problems = Array.isArray(response.problems) ? response.problems : [];
-    return { details: problems[0], available: true };
+    return { details: problems[0] as unknown as Row, available: true };
   } catch {
     return { details: undefined, available: false };
   }
