@@ -88,34 +88,6 @@ function snapshotStatus(snapshot: Row): string {
   return s(event.status_transition) || s(event.status) || 'Davis state';
 }
 
-function fallbackRca(id: string, p: Row, reason: string, events: Row[], history: Row[], logs: Row[], snapshots: Row[]): string {
-  const title = s(p['event.name']) || 'Dynatrace Problem';
-  const status = s(p['event.status']) || 'Not available';
-  const severity = s(p['event.severity']) || 'Not available';
-  const impact = s(p['dt.davis.impact_level']) || 'Not available';
-  const start = s(p['event.start']); const end = s(p['event.end']);
-  const nativeRoot = p.__nativeRootCauseEntity as NativeRootCause | null | undefined;
-  const nativeApiAvailable = p.__nativeProblemApiAvailable === true;
-  const rootValue = p['root_cause.smartscape_entity'];
-  const grailRoot = typeof rootValue === 'object' && rootValue !== null
-    ? s((rootValue as Row).name)
-    : s(rootValue);
-  const root = nativeApiAvailable ? (nativeRoot?.name || '') : (nativeRoot?.name || grailRoot);
-  const signal = events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 3).join(' | ');
-  return `## Executive Summary\n${title} (${id}) is ${status.toLowerCase()} with severity ${severity}. ${root ? `Davis exposed ${root} as the root-cause entity.` : 'Not proven by available evidence.'}\n\n## Incident Overview\nTitle: ${title}\nStatus: ${status}\nSeverity: ${severity}\nStarted: ${start || 'Not available'}\nDuration: ${duration(start, end)}\n\n## Root Cause Assessment\n${root ? `Davis identified ${root} as the root-cause entity.` : 'Not proven by available evidence.'}\n\n## Technical Root-Cause Chain\n${signal || 'Not proven by available evidence.'}\n\n## Incident Timeline\n${snapshots.length ? snapshots.slice(0, 12).map((e) => `${s(e.timestamp) || 'Time unavailable'} — ${snapshotStatus(e)}`).join('\n') : events.length ? events.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available.'}\n\n## Past Occurrences & Recurrence Pattern\n${history.length ? `${history.length} matching Davis occurrence(s) retrieved from the last 30 days.` : 'No matching past occurrences were retrieved from the last 30 days.'}\n\n## Impact Assessment\nImpact level: ${impact}. Affected-user count: ${s(p['dt.davis.affected_users_count']) || 'Not available'}. Incident logs retrieved: ${logs.length}.\n\n## Immediate Remediation Plan\nValidate the identified Davis evidence and affected dependency before making a production change.\n\n## Permanent / Preventive Actions\nNot proposed as completed actions; validate the causal signal first.\n\n## Monitoring & Alerting Recommendations\nMonitor the affected service, response time, errors, dependency health and the Davis causal signal.\n\n## Validation Checklist\nConfirm recovery, verify the causal metric returns to baseline, and verify that the problem does not recur.\n\n## RCA Confidence & Evidence Gaps\nEvidence based — Dynatrace Assist did not return the generated RCA. ${reason}`;
-}
-
-interface NativeRootCause {
-  name: string;
-  id: string;
-  type: string;
-}
-
-interface NativeProblemLookup {
-  details: unknown;
-  available: boolean;
-}
-
 function resolveNativeRootCause(details: unknown): NativeRootCause | null {
   if (!details || typeof details !== 'object' || Array.isArray(details)) return null;
   const row = details as Row;
