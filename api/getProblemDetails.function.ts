@@ -114,8 +114,12 @@ function resolveNativeRootCause(details: unknown): NativeRootCause | null {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     const entity = raw as Row;
     const name = s(entity.name);
-    const id = s(entity.id) || fallbackId;
-    const type = s(entity.type);
+    const entityId = entity.entityId;
+    const nestedEntityId = entityId && typeof entityId === 'object' && !Array.isArray(entityId)
+      ? entityId as Row
+      : {};
+    const id = s(entity.id) || s(nestedEntityId.id) || fallbackId;
+    const type = s(entity.type) || s(nestedEntityId.type);
     return name ? { name, id, type } : null;
   }
   return null;
@@ -123,8 +127,18 @@ function resolveNativeRootCause(details: unknown): NativeRootCause | null {
 
 async function loadNativeProblem(id: string): Promise<NativeProblemLookup> {
   try {
-    const details = await problemsClient.getProblem({ problemId: id, fields: 'evidenceDetails,impactAnalysis,recentComments' });
-    return { details, available: true };
+    // The UI supplies the human-facing display ID (for example P-260996132).
+    // Problems API v2 getProblem() expects the internal problemId, so resolve
+    // the display ID through getProblems() first.
+    const response = await problemsClient.getProblems({
+      from: 'now-365d',
+      to: 'now',
+      pageSize: 1,
+      problemSelector: `displayId("${q(id)}")`,
+      fields: 'evidenceDetails,impactAnalysis,recentComments',
+    });
+    const problems = Array.isArray(response.problems) ? response.problems : [];
+    return { details: problems[0], available: true };
   } catch {
     return { details: undefined, available: false };
   }
