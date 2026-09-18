@@ -16,7 +16,7 @@ jest.mock('@dynatrace-sdk/client-query', () => ({
 }));
 
 describe('getProblemDetails.function', () => {
-  const mockedGetProblemss = jest.mocked(problemsClient.getProblems);
+  const mockedGetProblems = jest.mocked(problemsClient.getProblems);
   const mockedQueryExecute = jest.mocked(queryExecutionClient.queryExecute);
 
   beforeEach(() => {
@@ -128,14 +128,14 @@ describe('getProblemDetails.function', () => {
 
 
   it('prefers the native Davis root-cause name over a Grail entity id or secondary name', async () => {
-    mockedGetProblems.mockResolvedValue({
+    mockedGetProblems.mockResolvedValue({ problems: [{
       problemId: 'P-789',
       title: 'Failure rate increase',
       rootCauseEntity: 'hermes',
       rootCauseEntityId: 'SERVICE-604A2FB4275E32CA',
       evidenceDetails: { details: [] },
       impactAnalysis: { impacts: [] },
-    } as never);
+    }] } as never);
 
     mockedQueryExecute.mockImplementation(async ({ body }) => {
       if (body.query.includes('fetch dt.davis.events')) {
@@ -174,14 +174,14 @@ describe('getProblemDetails.function', () => {
   });
 
   it('does not fall back to Grail when native Davis explicitly reports no root cause', async () => {
-    mockedGetProblems.mockResolvedValue({
+    mockedGetProblems.mockResolvedValue({ problems: [{
       problemId: 'P-790',
       title: 'Failure rate increase',
       rootCauseEntity: null,
       rootCauseEntityId: null,
       evidenceDetails: { details: [] },
       impactAnalysis: { impacts: [] },
-    } as never);
+    }] } as never);
 
     mockedQueryExecute.mockImplementation(async ({ body }) => {
       if (body.query.includes('fetch dt.davis.events')) {
@@ -218,7 +218,7 @@ describe('getProblemDetails.function', () => {
   });
 
   it('does not invent a root cause when Dynatrace has not exposed one', async () => {
-    mockedGetProblems.mockResolvedValue({
+    mockedGetProblems.mockResolvedValue({ problems: [{
       problemId: 'P-456',
       title: 'Failure rate increase',
       impactLevel: 'SERVICES',
@@ -231,7 +231,7 @@ describe('getProblemDetails.function', () => {
           },
         ],
       },
-    } as never);
+    }] } as never);
 
     mockedQueryExecute.mockResolvedValue({
       state: 'SUCCEEDED',
@@ -245,7 +245,7 @@ describe('getProblemDetails.function', () => {
           },
         ],
       },
-    } as never);
+    }] } as never);
 
     const result = await getProblemDetailsFunction({ problemId: 'P-456' });
 
