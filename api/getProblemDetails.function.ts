@@ -233,6 +233,10 @@ async function load(id: string): Promise<Evidence> {
     zoneRows = zoneResults.flat();
   }
 
+  const nativeZoneNames = nativeProblem.details && typeof nativeProblem.details === 'object' && !Array.isArray(nativeProblem.details)
+    ? flattenZones([{ managementZones: (nativeProblem.details as Row).managementZones }])
+    : [];
+
   return {
     problem: {
       ...problem,
@@ -243,7 +247,7 @@ async function load(id: string): Promise<Evidence> {
     logs,
     history,
     snapshots,
-    managementZones: flattenZones(zoneRows),
+    managementZones: [...new Set([...nativeZoneNames, ...flattenZones(zoneRows)])].slice(0, 30),
   };
 }
 
@@ -311,7 +315,7 @@ No unobserved metric values, deployments, user impact, or infrastructure causes 
 
 async function assist(id: string, evidence: Evidence): Promise<string> {
   const p = evidence.problem;
-  const compactEvidence = JSON.stringify({
+  const compactEvidence = JSON.stringify(jsonSafe({
     problem: {
       id,
       title: s(p['event.name']),
@@ -340,6 +344,7 @@ async function assist(id: string, evidence: Evidence): Promise<string> {
     pastOccurrences: evidence.history.slice(0, 40),
   }).slice(0, 26000);
 
+  }).slice(0, 26000);
   const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze ONLY the retrieved Dynatrace evidence in the supplementary context. Do not claim lack of access and do not ask for telemetry already included. Separate observed facts from inference. Never invent metrics, timestamps, deployments, root causes, affected users, recurrence or remediation results. If unproven, say "Not proven by available evidence". Recommendations are proposals only. Return exactly these sections: 1. Executive Summary 2. Incident Overview 3. Root Cause Assessment 4. Technical Root-Cause Chain 5. Incident Timeline 6. Past Occurrences & Recurrence Pattern 7. Impact Assessment 8. Immediate Remediation Plan 9. Permanent / Preventive Actions 10. Monitoring & Alerting Recommendations 11. Validation Checklist 12. RCA Confidence & Evidence Gaps. Keep the response concise and below 7500 characters.`;
 
   const response = await publicClient.recommenderConversation({
