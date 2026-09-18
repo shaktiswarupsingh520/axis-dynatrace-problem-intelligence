@@ -108,12 +108,12 @@ function resolveNativeRootCause(details: unknown): NativeRootCause | null {
   }
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     const entity = raw as Row;
-    const name = s(entity.name) || s(entity.id);
+    const name = s(entity.name);
     const id = s(entity.id) || fallbackId;
     const type = s(entity.type);
-    return name ? { name, id, type } : null;
+    return name ? { name, id, type } : (id ? { name: '', id, type } : null);
   }
-  return fallbackId ? { name: fallbackId, id: fallbackId, type: '' } : null;
+  return null;
 }
 
 async function loadNativeProblem(id: string): Promise<NativeProblemLookup> {
