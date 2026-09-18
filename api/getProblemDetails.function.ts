@@ -197,12 +197,12 @@ async function load(id: string): Promise<Evidence> {
   }
   if (!problem) throw new Error(`Problem ${id} was not found in Dynatrace Problems API or Grail.`);
 
-  const problem = problems[0];
-  const affectedIds = Array.isArray(problem.affected_entity_ids) ? problem.affected_entity_ids.map(s).filter(Boolean) : [s(problem.affected_entity_ids)].filter(Boolean);
-  const eventIds = Array.isArray(problem['dt.davis.event_ids']) ? problem['dt.davis.event_ids'].map(s).filter(Boolean) : [];
+  const problemRecord = problem;
+  const affectedIds = Array.isArray(problemRecord.affected_entity_ids) ? problemRecord.affected_entity_ids.map(s).filter(Boolean) : [s(problemRecord.affected_entity_ids)].filter(Boolean);
+  const eventIds = Array.isArray(problemRecord['dt.davis.event_ids']) ? problemRecord['dt.davis.event_ids'].map(s).filter(Boolean) : [];
   const eventList = eventIds.slice(0, 80).map((x) => `"${q(x)}"`).join(', ');
-  const start = s(problem['event.start']);
-  const end = s(problem['event.end']) || new Date().toISOString();
+  const start = s(problemRecord['event.start']);
+  const end = s(problemRecord['event.end']) || new Date().toISOString();
 
   const events = eventList ? await optionalDql(`fetch dt.davis.events, from:now()-365d, to:now()\n| filter in(event.id,array(${eventList}))\n| fields event.id,event.name,event.type,event.status,event.severity,event.category,event.start,event.end,event.description,dt.source_entity,dt.smartscape_source.id,dt.smartscape_source.type,dt.query,dt.davis.is_rootcause_relevant\n| sort event.start asc\n| limit 100`, 100) : [];
 
@@ -215,9 +215,9 @@ async function load(id: string): Promise<Evidence> {
 
   const logs = entityList ? await optionalDql(`fetch logs, from:now()-365d, to:now()\n| filter timestamp >= toTimestamp("${q(start)}") - 15m and timestamp <= toTimestamp("${q(end)}") + 15m\n| filter in(dt.source_entity,array(${entityList}))\n| fields timestamp,dt.source_entity,status,severity,content,message\n| sort timestamp asc\n| limit 100`, 100) : [];
 
-  const history = await optionalDql(`fetch dt.davis.problems, from:now()-30d, to:now()\n| filter not(dt.davis.is_duplicate) and event.name == "${q(s(problem['event.name']))}"\n| fields display_id,event.name,event.status,event.severity,event.start,event.end,event.category,resolved_problem_duration,root_cause.smartscape_entity\n| sort event.start desc\n| limit 100`, 100);
+  const history = await optionalDql(`fetch dt.davis.problems, from:now()-30d, to:now()\n| filter not(dt.davis.is_duplicate) and event.name == "${q(s(problemRecord['event.name']))}"\n| fields display_id,event.name,event.status,event.severity,event.start,event.end,event.category,resolved_problem_duration,root_cause.smartscape_entity\n| sort event.start desc\n| limit 100`, 100);
 
-  const snapshots = await optionalDql(`fetch dt.davis.problems.snapshots, from:now()-365d, to:now()\n| filter event.id == "${q(s(problem['event.id']))}"\n| fields timestamp,event.status,event.status_transition,event.severity,event.name,root_cause_entity_id\n| sort timestamp asc\n| limit 80`, 80);
+  const snapshots = await optionalDql(`fetch dt.davis.problems.snapshots, from:now()-365d, to:now()\n| filter event.id == "${q(s(problemRecord['event.id']))}"\n| fields timestamp,event.status,event.status_transition,event.severity,event.name,root_cause_entity_id\n| sort timestamp asc\n| limit 80`, 80);
 
   const entityIdsForZones = sourceIds.slice(0, 80);
   const zoneList = entityIdsForZones.map((x) => `"${q(x)}"`).join(', ');
