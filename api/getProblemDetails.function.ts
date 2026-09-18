@@ -12,6 +12,15 @@ interface Evidence {
   snapshots: Row[];
   managementZones: string[];
 }
+interface NativeRootCause {
+  name: string;
+  id: string;
+  type: string;
+}
+interface NativeProblemLookup {
+  details?: Row;
+  available: boolean;
+}
 
 const s = (v: unknown): string => {
   if (v == null) return '';
