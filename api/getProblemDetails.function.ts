@@ -153,7 +153,7 @@ async function load(id: string): Promise<Evidence> {
 
   let problem = problems[0];
   if (!problem && nativeProblem.details && typeof nativeProblem.details === 'object' && !Array.isArray(nativeProblem.details)) {
-    const native = nativeProblem.details as Row;
+    const native = nativeProblem.details;
     const root = resolveNativeRootCause(native);
     const affected = Array.isArray(native.affectedEntities) ? native.affectedEntities : [];
     problem = {
@@ -215,7 +215,7 @@ async function load(id: string): Promise<Evidence> {
   }
 
   const nativeZoneNames = nativeProblem.details && typeof nativeProblem.details === 'object' && !Array.isArray(nativeProblem.details)
-    ? flattenZones([{ managementZones: (nativeProblem.details as Row).managementZones }])
+    ? flattenZones([{ managementZones: nativeProblem.details.managementZones }])
     : [];
 
   return {
