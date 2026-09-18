@@ -385,22 +385,6 @@ export default async function (payload: Payload) {
     assistFallback = true;
     assistStatus = error instanceof Error ? error.message : 'Assist request failed';
   }
-  const rootData = p['root_cause.smartscape_entity'];
-  const nativeRoot = p.__nativeRootCauseEntity as NativeRootCause | null | undefined;
-  const nativeApiAvailable = p.__nativeProblemApiAvailable === true;
-  const grailRoot = typeof rootData === 'object' && rootData !== null
-    ? { name: s((rootData as Row).name) || s((rootData as Row).id), id: s((rootData as Row).id) || s(p.root_cause_entity_id), type: s((rootData as Row).type) }
-    : { name: s(rootData), id: s(p.root_cause_entity_id), type: '' };
-  // The native Problems API is authoritative. If it was successfully retrieved and
-  // explicitly has no root cause, do not let a secondary Grail field manufacture one.
-  const resolvedRoot = nativeApiAvailable ? nativeRoot : (nativeRoot || (grailRoot.name ? grailRoot : null));
-  const root = resolvedRoot?.name || '';
-  const rootEntityId = resolvedRoot?.id || '';
-  // Davis may return rootCauseEntity as a name/id string rather than a typed
-  // entity object. The entity type is descriptive metadata, so enrich it from
-  // the already-retrieved Grail entity record without changing the authoritative
-  // Davis root-cause name or ID.
-  const rootEntityType = resolvedRoot?.type || grailRoot.type || '';
   const probableEvidence = evidence.events.map((e) => s(e['event.description']) || s(e['event.name'])).filter(Boolean).slice(0, 12);
   const currentId = payload.problemId;
   const occurrences = evidence.history.filter((row) => s(row.display_id) !== currentId);
