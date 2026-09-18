@@ -247,6 +247,68 @@ async function load(id: string): Promise<Evidence> {
   };
 }
 
+function deterministicRca(id: string, evidence: Evidence, root: NativeRootCause | null, occurrences: Row[]): string {
+  const p = evidence.problem;
+  const title = s(p['event.name']) || 'Dynatrace Problem';
+  const status = s(p['event.status']) || 'Not available';
+  const severity = s(p['event.severity']) || 'Not available';
+  const start = s(p['event.start']);
+  const end = s(p['event.end']);
+  const causal = evidence.events.filter((e) => e['dt.davis.is_rootcause_relevant'] === true);
+  const rootLine = root
+    ? `Davis identified ${root.name} as the root-cause entity (ID: ${root.id || 'not returned'}).`
+    : 'Dynatrace did not expose a definitive root-cause entity for this problem.';
+  return `## Executive Summary
+${title} (${id}) is ${status.toLowerCase()} with severity ${severity}. ${rootLine}
+
+## Incident Overview
+Title: ${title}
+Status: ${status}
+Severity: ${severity}
+Category: ${s(p['event.category']) || 'Not available'}
+Started: ${start || 'Not available'}
+Ended: ${end || 'Not available'}
+Duration: ${duration(start, end)}
+Affected entities: ${s(p.affected_entity_names) || s(p.affected_entity_ids) || 'Not available'}
+
+## Root Cause Assessment
+${rootLine}
+Root-cause entity type: ${root?.type || 'Not available'}
+The native Dynatrace Problems API result is the authoritative root-cause source.
+
+## Technical Root-Cause Chain
+${root ? root.name : 'Root cause not established'}
+${causal.length ? causal.slice(0, 10).map((e) => `→ ${s(e['event.name']) || 'Davis causal event'}${s(e['dt.smartscape_source.id']) || s(e['dt.source_entity']) ? ` [${s(e['dt.smartscape_source.id']) || s(e['dt.source_entity'])}]` : ''}`).join('\n') : '→ No retrieved Davis event is marked root-cause relevant.'}
+
+## Incident Timeline
+${evidence.snapshots.length ? evidence.snapshots.slice(0, 12).map((e) => `${s(e.timestamp) || 'Time unavailable'} — ${snapshotStatus(e)}`).join('\n') : evidence.events.length ? evidence.events.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available from retrieved evidence.'}
+
+## Past Occurrences & Recurrence Pattern
+${occurrences.length ? `${occurrences.length} matching Davis occurrence(s) retrieved from the last 30 days.` : 'No matching past occurrences were retrieved from the last 30 days.'}
+
+## Impact Assessment
+Impact level: ${s(p['dt.davis.impact_level']) || 'Not available'}
+Affected users: ${s(p['dt.davis.affected_users_count']) || 'Not available'}
+Incident logs retrieved: ${evidence.logs.length}
+
+## Immediate Remediation Plan
+Validate the Davis causal entity and affected dependency against the incident timeline before making a production change.
+
+## Permanent / Preventive Actions
+No remediation result is claimed. Define permanent actions only after validating the observed causal signal.
+
+## Monitoring & Alerting Recommendations
+Monitor the affected entity and retrieved Davis causal signal. Correlate application logs when available.
+
+## Validation Checklist
+Confirm recovery, verify the causal signal returns to baseline, and verify the same evidence signature does not recur.
+
+## RCA Confidence & Evidence Gaps
+Confidence: ${root ? 'High — native Problems API exposed a root-cause entity.' : (p['dt.analysis.ready'] === false ? 'Pending Davis analysis.' : 'Evidence based — no definitive root cause exposed.')}
+Observed evidence: ${evidence.events.length} Davis events, ${evidence.logs.length} logs, ${evidence.snapshots.length} timeline snapshots.
+No unobserved metric values, deployments, user impact, or infrastructure causes are asserted.`;
+}
+
 async function assist(id: string, evidence: Evidence): Promise<string> {
   const p = evidence.problem;
   const compactEvidence = JSON.stringify({
@@ -302,16 +364,27 @@ export default async function (payload: Payload) {
   if (!/^P-\d+$/.test(payload.problemId)) throw new Error('A valid Dynatrace Problem ID such as P-260948426 is required.');
 
   const evidence = await load(payload.problemId);
-  let analysis = ''; let assistFallback = false; let assistStatus = 'SUCCESSFUL';
+  const p = evidence.problem;
+  const nativeRoot = p.__nativeRootCauseEntity as NativeRootCause | null | undefined;
+  const nativeApiAvailable = p.__nativeProblemApiAvailable === true;
+  const rootData = p['root_cause.smartscape_entity'];
+  const grailRoot = typeof rootData === 'object' && rootData !== null
+    ? { name: s((rootData as Row).name) || s((rootData as Row).id), id: s((rootData as Row).id) || s(p.root_cause_entity_id), type: s((rootData as Row).type) }
+    : { name: s(rootData), id: s(p.root_cause_entity_id), type: '' };
+  const resolvedRoot = nativeApiAvailable ? nativeRoot : (nativeRoot || (grailRoot.name ? grailRoot : null));
+  const root = resolvedRoot?.name || '';
+  const rootEntityId = resolvedRoot?.id || '';
+  const rootEntityType = resolvedRoot?.type || grailRoot.type || '';
+  const currentId = payload.problemId;
+  const occurrences = evidence.history.filter((row) => s(row.display_id) !== currentId);
+  const analysis = deterministicRca(currentId, evidence, resolvedRoot, occurrences);
+  let assistAnalysis = ''; let assistFallback = false; let assistStatus = 'SUCCESSFUL';
   try {
-    analysis = await assist(payload.problemId, evidence);
+    assistAnalysis = await assist(currentId, evidence);
   } catch (error) {
     assistFallback = true;
     assistStatus = error instanceof Error ? error.message : 'Assist request failed';
-    analysis = fallback(payload.problemId, evidence.problem, assistStatus, evidence.events, evidence.history, evidence.logs, evidence.snapshots);
   }
-
-  const p = evidence.problem;
   const rootData = p['root_cause.smartscape_entity'];
   const nativeRoot = p.__nativeRootCauseEntity as NativeRootCause | null | undefined;
   const nativeApiAvailable = p.__nativeProblemApiAvailable === true;
@@ -344,6 +417,7 @@ export default async function (payload: Payload) {
     displayId: currentId,
     displayName: s(p['event.name']) || 'Dynatrace Problem',
     analysis,
+    assistAnalysis,
     generatedAt: new Date().toISOString(),
     nativeRootCauseEntity: root || null,
     definitiveRootCause: Boolean(root),
@@ -389,6 +463,7 @@ export default async function (payload: Payload) {
       eventIds: Array.isArray(p['dt.davis.event_ids']) ? p['dt.davis.event_ids'].map(s).filter(Boolean) : [],
       causalEvents: evidence.events.filter((e) => e['dt.davis.is_rootcause_relevant'] === true).slice(0, 10).map((e) => ({ id: s(e['event.id']), name: s(e['event.name']), description: s(e['event.description']), entityId: s(e['dt.smartscape_source.id']) || s(e['dt.source_entity']), entityType: s(e['dt.smartscape_source.type']) })),
       fullRca: analysis,
+      assistAnalysis,
       assistFallback,
       assistStatus,
       analysisReady: p['dt.analysis.ready'],
