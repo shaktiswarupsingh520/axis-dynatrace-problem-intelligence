@@ -342,7 +342,7 @@ async function assist(id: string, evidence: Evidence): Promise<string> {
     correlatedEvents: evidence.events.slice(0, 70),
     incidentLogs: evidence.logs.slice(0, 80),
     pastOccurrences: evidence.history.slice(0, 40),
-  }), 26000);
+  })).slice(0, 26000);
 
   const prompt = `Create a customer-ready Dynatrace incident RCA for Davis Problem ${id}. Analyze ONLY the retrieved Dynatrace evidence in the supplementary context. Do not claim lack of access and do not ask for telemetry already included. Separate observed facts from inference. Never invent metrics, timestamps, deployments, root causes, affected users, recurrence or remediation results. If unproven, say "Not proven by available evidence". Recommendations are proposals only. Return exactly these sections: 1. Executive Summary 2. Incident Overview 3. Root Cause Assessment 4. Technical Root-Cause Chain 5. Incident Timeline 6. Past Occurrences & Recurrence Pattern 7. Impact Assessment 8. Immediate Remediation Plan 9. Permanent / Preventive Actions 10. Monitoring & Alerting Recommendations 11. Validation Checklist 12. RCA Confidence & Evidence Gaps. Keep the response concise and below 7500 characters.`;
 
