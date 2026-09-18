@@ -94,7 +94,7 @@ describe('getProblemDetails.function', () => {
         ],
       },
     };
-    mockedGetProblems.mockResolvedValue({ problems: [problem as never] });
+    mockedGetProblems.mockResolvedValue({ totalCount: 1, problems: [problem as never] });
 
     const result = await getProblemDetailsFunction({ problemId: 'P-123' });
 
@@ -128,7 +128,7 @@ describe('getProblemDetails.function', () => {
 
 
   it('prefers the native Davis root-cause name over a Grail entity id or secondary name', async () => {
-    mockedGetProblems.mockResolvedValue({ problems: [{
+    mockedGetProblems.mockResolvedValue({ totalCount: 1, problems: [{
       problemId: 'P-789',
       title: 'Failure rate increase',
       rootCauseEntity: {
@@ -176,7 +176,7 @@ describe('getProblemDetails.function', () => {
   });
 
   it('does not fall back to Grail when native Davis explicitly reports no root cause', async () => {
-    mockedGetProblems.mockResolvedValue({ problems: [{
+    mockedGetProblems.mockResolvedValue({ totalCount: 1, problems: [{
       problemId: 'P-790',
       title: 'Failure rate increase',
       rootCauseEntity: null,
@@ -220,7 +220,7 @@ describe('getProblemDetails.function', () => {
   });
 
   it('does not invent a root cause when Dynatrace has not exposed one', async () => {
-    mockedGetProblems.mockResolvedValue({ problems: [{
+    mockedGetProblems.mockResolvedValue({ totalCount: 1, problems: [{
       problemId: 'P-456',
       title: 'Failure rate increase',
       impactLevel: 'SERVICES',
