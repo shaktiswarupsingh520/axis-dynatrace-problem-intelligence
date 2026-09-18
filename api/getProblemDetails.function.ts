@@ -116,7 +116,7 @@ function resolveNativeRootCause(details: unknown): NativeRootCause | null {
     const name = s(entity.name);
     const id = s(entity.id) || fallbackId;
     const type = s(entity.type);
-    return name ? { name, id, type } : (id ? { name: '', id, type } : null);
+    return name ? { name, id, type } : null;
   }
   return null;
 }
