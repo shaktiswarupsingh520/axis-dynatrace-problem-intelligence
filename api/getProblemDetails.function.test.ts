@@ -70,6 +70,8 @@ describe('getProblemDetails.function', () => {
     const problem = {
       problemId: 'P-123',
       title: 'CPU-request saturation on node',
+      rootCauseEntity: 'node-01',
+      rootCauseEntityId: 'HOST-123',
       severityLevel: 'RESOURCE_CONTENTION',
       impactLevel: 'INFRASTRUCTURE',
       evidenceDetails: {
@@ -118,6 +120,98 @@ describe('getProblemDetails.function', () => {
     expect(result.problemAnalysis?.probableCause).toContain('CPU usage exceeded');
     expect(result.problemAnalysis?.confidence).toBe('High');
     expect(result.problemAnalysis?.analysisReady).toBe(true);
+  });
+
+
+
+  it('prefers the native Davis root-cause name over a Grail entity id or secondary name', async () => {
+    mockedGetProblem.mockResolvedValue({
+      problemId: 'P-789',
+      title: 'Failure rate increase',
+      rootCauseEntity: 'hermes',
+      rootCauseEntityId: 'SERVICE-604A2FB4275E32CA',
+      evidenceDetails: { details: [] },
+      impactAnalysis: { impacts: [] },
+    } as never);
+
+    mockedQueryExecute.mockImplementation(async ({ body }) => {
+      if (body.query.includes('fetch dt.davis.events')) {
+        return {
+          state: 'SUCCEEDED',
+          result: { records: [] },
+        } as never;
+      }
+      return {
+        state: 'SUCCEEDED',
+        result: {
+          records: [
+            {
+              display_id: 'P-789',
+              'event.name': 'Failure rate increase',
+              'dt.analysis.ready': true,
+              'dt.davis.event_ids': [],
+              'root_cause.smartscape_entity': {
+                id: 'SERVICE-604A2FB4275E32CA',
+                type: 'service',
+                name: 'SERVICE-604A2FB4275E32CA',
+              },
+            },
+          ],
+        },
+      } as never;
+    });
+
+    const result = await getProblemDetailsFunction({ problemId: 'P-789' });
+
+    expect(result.nativeRootCauseEntity).toBe('hermes');
+    expect(result.problemAnalysis?.rootCause).toBe('hermes');
+    expect(result.problemAnalysis?.rootCauseEntityId).toBe('SERVICE-604A2FB4275E32CA');
+    expect(result.problemAnalysis?.rootCauseEntityType).toBe('');
+    expect(result.definitiveRootCause).toBe(true);
+  });
+
+  it('does not fall back to Grail when native Davis explicitly reports no root cause', async () => {
+    mockedGetProblem.mockResolvedValue({
+      problemId: 'P-790',
+      title: 'Failure rate increase',
+      rootCauseEntity: null,
+      rootCauseEntityId: null,
+      evidenceDetails: { details: [] },
+      impactAnalysis: { impacts: [] },
+    } as never);
+
+    mockedQueryExecute.mockImplementation(async ({ body }) => {
+      if (body.query.includes('fetch dt.davis.events')) {
+        return {
+          state: 'SUCCEEDED',
+          result: { records: [] },
+        } as never;
+      }
+      return {
+        state: 'SUCCEEDED',
+        result: {
+          records: [
+            {
+              display_id: 'P-790',
+              'event.name': 'Failure rate increase',
+              'dt.analysis.ready': true,
+              'root_cause.smartscape_entity': {
+                id: 'SERVICE-FAKE',
+                type: 'service',
+                name: 'fake-grail-root',
+              },
+            },
+          ],
+        },
+      } as never;
+    });
+
+    const result = await getProblemDetailsFunction({ problemId: 'P-790' });
+
+    expect(result.nativeRootCauseEntity).toBeNull();
+    expect(result.problemAnalysis?.rootCause).toBe('No definitive root-cause entity exposed yet');
+    expect(result.problemAnalysis?.rootCauseEntityId).toBeUndefined();
+    expect(result.definitiveRootCause).toBe(false);
   });
 
   it('does not invent a root cause when Dynatrace has not exposed one', async () => {
