@@ -63,12 +63,11 @@ const pdfLine = (commands: string[], x1: number, y1: number, x2: number, y2: num
   commands.push('q ' + color + ' RG ' + String(width) + ' w ' + String(x1) + ' ' + String(y1) + ' m ' + String(x2) + ' ' + String(y2) + ' l S Q');
 };
 
-function drawHeader(commands: string[], title: string, subtitle: string, page: number, total: number): void {
+function drawHeader(commands: string[], title: string, _subtitle: string, page: number, total: number): void {
   pdfRect(commands, 0, 790, 595, 52, '0.08 0.18 0.34');
   pdfText(commands, 38, 818, 'AXIS BANK', 9, true, '1 1 1');
   pdfText(commands, 38, 800, title, 15, true, '1 1 1');
   pdfText(commands, 555, 801, String(page) + ' / ' + String(total), 8, false, '0.78 0.86 0.96');
-  if (subtitle) pdfText(commands, 38, 787, subtitle, 7.5, false, '0.55 0.78 1');
 }
 
 function drawFooter(commands: string[]): void {
@@ -209,9 +208,19 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     drawCard(c, 300, 675, 116, 55, 'Severity', text(facts.severity) || 'Not available', '0.95 0.65 0.20');
     drawCard(c, 426, 675, 113, 55, 'Category', text(facts.category) || 'Not available', '0.18 0.39 0.78');
 
-    pdfRect(c, 48, 548, 491, 92, '0.95 0.97 0.99');
-    pdfText(c, 62, 620, 'PRIMARY FINDING', 7, true, '0.18 0.39 0.78');
-    wrap(executive, 92).slice(0, 5).forEach((line, i) => pdfText(c, 62, 601 - i * 13, line, 8.5));
+    pdfRect(c, 48, 530, 491, 110, '0.95 0.97 0.99');
+    pdfText(c, 62, 620, 'EXECUTIVE SUMMARY', 7, true, '0.18 0.39 0.78');
+    const executiveSummary = [
+      'Dynatrace detected a Failure rate increase affecting the reported service scope.',
+      'The native Problems API identifies ' + root + ' as the root-cause entity.',
+      'Observed evidence: severity ' + (text(facts.severity) || 'not available') + ', duration ' + duration + ', ' +
+        String(result.evidenceSummary.correlatedEvents) + ' correlated Davis events and ' +
+        String(result.evidenceSummary.timelineSnapshots) + ' timeline snapshots.',
+      'The underlying technical trigger is not asserted beyond the retrieved evidence; application logs and additional telemetry should be used for deeper validation.'
+    ];
+    executiveSummary.forEach((line, i) => {
+      wrap(line, 90).forEach((wrapped, j) => pdfText(c, 62, 600 - (i * 21) - (j * 12), wrapped, 8.2));
+    });
 
     y = drawSectionTitle(c, 48, 516, 'Evidence coverage', 'Observed evidence available to this RCA');
     const evidenceTableBottom = drawTable(c, 48, y, [190, 115, 186], ['Indicator', 'Observed', 'Interpretation'], [
@@ -244,18 +253,21 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     pdfText(c, 62, 682, 'The native Problems API result is treated as the authoritative root-cause source.', 7.5, false, '0.42 0.48 0.56');
 
     y = drawSectionTitle(c, 48, 638, 'Root cause assessment');
-    wrap(rootAssessment, 92).slice(0, 8).forEach((line, i) => pdfText(c, 48, y - i * 13, line, 8.5));
+    const rootAssessmentClean = rootAssessment
+      .replace(/\s*\(ID:\s*[^)]+\)/gi, '')
+      .replace(/\s*\[?(?:SERVICE|PROCESS_GROUP|HOST)-[A-Z0-9_-]+\]?/g, '');
+    wrap(rootAssessmentClean, 92).slice(0, 8).forEach((line, i) => pdfText(c, 48, y - i * 13, line, 8.5));
     y -= Math.min(120, Math.max(50, wrap(rootAssessment, 92).length * 13 + 20));
 
     y = drawSectionTitle(c, 48, y, 'Technical root-cause chain', 'Observed chain only; inferred triggers remain explicitly marked');
-    const chainLines = wrap(chain.replace(/\s*\[(?:SERVICE|PROCESS_GROUP|HOST)-[A-Z0-9_-]+\]/g, ''), 92).filter(Boolean).slice(0, 14);
-    let cy = y;
-    chainLines.forEach((line, i) => {
-      pdfRect(c, 52, cy - 8, 9, 9, i === 0 ? '0.16 0.65 0.43' : '0.18 0.39 0.78');
-      pdfText(c, 70, cy - 7, line, 8.2);
-      if (i < chainLines.length - 1) pdfLine(c, 56.5, cy - 10, 56.5, cy - 22, '0.65 0.72 0.82', 1.2);
-      cy -= 18;
-    });
+    pdfRect(c, 48, y - 18, 491, 92, '0.96 0.98 0.99');
+    pdfRect(c, 62, y + 35, 10, 10, '0.16 0.65 0.43');
+    pdfText(c, 82, y + 34, root, 10, true);
+    pdfText(c, 82, y + 16, 'Root-cause entity identified by the native Dynatrace Problems API.', 7.8, false, '0.42 0.48 0.56');
+    pdfText(c, 62, y - 4, 'Supporting evidence', 7, true, '0.18 0.39 0.78');
+    pdfText(c, 160, y - 4, String(result.evidenceSummary.correlatedEvents) + ' correlated Davis events; ' + String(result.evidenceSummary.timelineSnapshots) + ' timeline snapshots.', 7.8);
+    pdfText(c, 62, y - 23, 'Causal-chain boundary', 7, true, '0.70 0.42 0.08');
+    pdfText(c, 160, y - 23, 'No additional service-to-service relationship is asserted without explicit telemetry evidence.', 7.8);
 
     pdfRect(c, 48, 105, 491, 92, '0.97 0.96 0.91');
     pdfText(c, 62, 178, 'PROVEN VS. REQUIRES VALIDATION', 7, true, '0.70 0.42 0.08');
