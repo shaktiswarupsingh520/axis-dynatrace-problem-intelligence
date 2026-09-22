@@ -11,7 +11,6 @@ const text = (value: unknown): string => { if (value == null) return ''; if (typ
 const section = (analysis: string, names: string[]): string => { const lines = analysis.split(/\r?\n/); const index = lines.findIndex((line) => names.some((name) => line.toLowerCase().includes(name.toLowerCase()))); if (index < 0) return ''; const body: string[] = []; for (let i = index + 1; i < lines.length; i += 1) { if (/^\s*#{1,6}\s+/.test(lines[i])) break; body.push(lines[i]); } return body.join('\n').trim(); };
 const escapeText = (value: string): string => value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
 const cleanDateValue = (value: string): string => value.replace(/^"(.*)"$/, '$1').trim();
-const dateText = (value: string): string => { const cleaned = cleanDateValue(value); const date = new Date(cleaned); return Number.isFinite(date.getTime()) ? date.toLocaleString() : cleaned || '—'; };
 export function buildCioRcaHtml(result: CioRcaResult): string {
   const facts = result.problemFacts ?? {}; const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived'; const root = result.nativeRootCauseEntity || 'Not proven by available evidence';
   const names: Array<[string, string[]]> = [['Executive Summary',['executive summary']],['Incident Overview',['incident overview']],['Root Cause Assessment',['root cause assessment']],['Technical Root-Cause Chain',['technical root-cause chain']],['Incident Timeline',['incident timeline']],['Past Occurrences & Recurrence Pattern',['past occurrences','recurrence pattern']],['Impact Assessment',['impact assessment']],['Immediate Remediation Plan',['immediate remediation plan']],['Permanent / Preventive Actions',['permanent / preventive actions']],['Monitoring & Alerting Recommendations',['monitoring & alerting recommendations']],['Validation Checklist',['validation checklist']],['RCA Confidence & Evidence Gaps',['rca confidence & evidence gaps']]];
@@ -387,7 +386,7 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     drawHeader(c, 'Evidence Appendix', 'Detailed retrieved occurrence and evidence inventory', 7, totalPages);
     let y = 750;
     y = drawSectionTitle(c, 48, y, 'Past occurrence detail', 'Evidence-matched records returned by the RCA backend');
-    const rows = occurrences.map((o) => [o.problemId, dateText(o.start), o.title, o.status, o.severity, o.duration]);
+    const rows = occurrences.map((o) => [o.problemId, o.title, o.status, o.severity, o.duration]);
     if (rows.length) {
       drawTable(c, 48, y, [105, 170, 90, 60, 66], ['Problem', 'Title', 'Status', 'Sev', 'Dur'], rows, 25);
     } else {
