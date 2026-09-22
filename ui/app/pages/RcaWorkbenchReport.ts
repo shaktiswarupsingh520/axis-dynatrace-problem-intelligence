@@ -303,14 +303,14 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
   // PAGE 4 - Timeline & recurrence
   {
     const c: string[] = [];
-    drawHeader(c, 'Incident Timeline & Recurrence', 'Operational history retrieved for this problem', 4, totalPages);
+    drawHeader(c, 'Incident Timeline & Recurrence', 'Detailed chronology intentionally omitted from this report', 4, totalPages);
     let y = 750;
     y = drawSectionTitle(c, 48, 750, 'Evidence observations', 'Root-cause-relevant Davis evidence retrieved for this problem');
     const eventRows = (result.causalEvents ?? []).slice(0, 5).map((event) => [event.name || 'Davis event', event.entityId || '—', event.description || 'No description returned']);
     if (eventRows.length) y = drawTable(c, 48, y, [135, 115, 241], ['Evidence', 'Entity', 'Observed detail'], eventRows, 34);
     else { pdfText(c, 48, y - 15, 'No root-cause-relevant Davis event details were retrieved.', 8.5); y -= 28; }
     y -= 16;
-    y = drawSectionTitle(c, 48, y, 'Evidence Timeline', 'Chronology of retrieved Davis observations');
+    y = drawSectionTitle(c, 48, y, 'Evidence Timeline', 'Detailed chronology intentionally omitted');
     pdfRect(c, 48, y - 74, 491, 52, '0.95 0.97 0.99');
     pdfText(c, 64, y - 43, 'DETAILED TIMELINE NOT DISPLAYED', 7, true, '0.18 0.39 0.78');
     drawParagraph(c, 64, y - 58, 'Chronological Davis observations are intentionally omitted from this report. The underlying Davis timeline remains available in Dynatrace.', 82, 7.8, 10, 3);
