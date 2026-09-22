@@ -289,6 +289,10 @@ describe('getProblemDetails.function', () => {
     expect(result.analysis).toContain('hermes');
     expect(result.analysis).toContain('Duration: 6.0 min');
     expect(result.analysis).toContain('Affected users: 12');
+    expect(result.analysis).toContain('root-cause-relevant Davis event(s)');
+    expect(result.analysis).toContain('## Technical Root-Cause Chain');
+    expect(result.analysis).toContain('## Immediate Remediation Plan');
+    expect(result.analysis).not.toContain('INCIDENT WINDOW');
     expect(result.analysis).not.toContain('53 ms');
     expect(result.analysis).not.toContain('92 ms');
     expect(result.managementZones).toEqual(['NHIAcquirer_1261']);
