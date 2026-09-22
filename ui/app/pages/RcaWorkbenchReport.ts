@@ -307,8 +307,8 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
   {
     const c: string[] = [];
     drawHeader(c, 'Remediation & Preventive Actions', 'Operational response plan', 5, totalPages);
-    let y = 750;
-    y = drawSectionTitle(c, 48, y, 'Immediate stabilization', 'Actions to contain the current operational risk');
+    const y = 750;
+    drawSectionTitle(c, 48, y, 'Immediate stabilization', 'Actions to contain the current operational risk');
     pdfRect(c, 48, 575, 491, 118, '0.95 0.98 0.96');
     pdfText(c, 62, 670, '01  VALIDATE', 7, true, '0.16 0.65 0.43');
     drawBulletList(c, 62, 650, wrap(immediate, 78).filter(Boolean).slice(0, 5), 78, 8.3);
@@ -331,8 +331,8 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
   {
     const c: string[] = [];
     drawHeader(c, 'Validation, Confidence & Governance', 'RCA quality controls', 6, totalPages);
-    let y = 750;
-    y = drawSectionTitle(c, 48, y, 'Validation checklist', 'Before closing the RCA');
+    const y = 750;
+    drawSectionTitle(c, 48, y, 'Validation checklist', 'Before closing the RCA');
     const validationItems = wrap(validation, 88).filter(Boolean).slice(0, 12);
     let vy = 685;
     validationItems.forEach((item) => {
