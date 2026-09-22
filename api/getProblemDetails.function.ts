@@ -275,7 +275,6 @@ function deterministicRca(id: string, evidence: Evidence, root: NativeRootCause 
     const entity = s(e['dt.smartscape_source.name']) || s(e['dt.source_entity']) || s(e['dt.smartscape_source.id']);
     return [name, entity ? `on ${entity}` : '', description ? `— ${description}` : ''].filter(Boolean).join(' ');
   }).filter(Boolean).slice(0, 6);
-  const snapshotLines = evidence.snapshots.slice(0, 12).map((e) => `${s(e.timestamp) || 'Time unavailable'} — ${snapshotStatus(e)}`);
   const affectedEntities = s(p.affected_entity_names) || s(p.affected_entity_ids) || 'Not available';
   const durationValue = duration(start, end);
   const technicalBoundary = root
@@ -313,7 +312,7 @@ ${causalDescriptions.length ? `Evidence details:
 ${causalDescriptions.join('\n')}` : 'Evidence details: No root-cause-relevant Davis event details were retrieved.'}
 
 ## Incident Timeline
-${snapshotLines.length ? snapshotLines.join('\n') : causal.length ? causal.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available from retrieved evidence.'}
+Detailed chronological Davis observations are intentionally not displayed in this RCA view. The underlying Davis timeline remains available in Dynatrace.
 
 ## Past Occurrences & Recurrence Pattern
 ${occurrences.length ? `${occurrences.length} matching Davis occurrence(s) retrieved from the last 30 days.` : 'No matching past occurrences were retrieved from the last 30 days.'}
