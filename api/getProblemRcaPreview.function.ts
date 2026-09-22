@@ -25,6 +25,68 @@ const duration = (start?: number, end?: number): string => {
   const minutes = Math.max(0, finish - start) / 60000;
   return minutes < 60 ? `${minutes.toFixed(1)} min` : minutes < 1440 ? `${(minutes / 60).toFixed(1)} h` : `${(minutes / 1440).toFixed(1)} d`;
 };
+const q = (value: string): string => value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+const entityIds = (entities?: EntityStub[]): string[] =>
+  (entities ?? []).map((entity) => entity.entityId?.id).filter((id): id is string => Boolean(id));
+const zoneIds = (zones?: Array<{ id?: string; name?: string }>): string[] =>
+  (zones ?? []).map((zone) => zone.id).filter((id): id is string => Boolean(id));
+
+async function loadRecurrenceCount(problem: Problem): Promise<{ count: number; occurrences: Array<{ problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string }> }> {
+  const title = problem.title?.trim();
+  const affectedIds = entityIds(problem.affectedEntities);
+  const managementZoneIds = zoneIds(problem.managementZones);
+  if (!title || !affectedIds.length || !managementZoneIds.length) return { count: 0, occurrences: [] };
+
+  const selector = [
+    `affectedEntities(${affectedIds.map((id) => `"${q(id)}"`).join(',')})`,
+    `managementZoneIds(${managementZoneIds.map((id) => `"${q(id)}"`).join(',')})`,
+  ].join(',');
+
+  try {
+    const candidates: Problem[] = [];
+    let response = await problemsClient.getProblems({
+      from: 'now-30d',
+      to: 'now',
+      pageSize: 500,
+      problemSelector: selector,
+      sort: '-startTime',
+    });
+    candidates.push(...((response.problems ?? []) as unknown as Problem[]));
+
+    for (let page = 0; response.nextPageKey && page < 3; page += 1) {
+      response = await problemsClient.getProblems({ nextPageKey: response.nextPageKey });
+      candidates.push(...((response.problems ?? []) as unknown as Problem[]));
+    }
+
+    const currentProblemId = problem.problemId ?? '';
+    const currentDisplayId = problem.displayId ?? '';
+    const currentEntities = new Set(affectedIds);
+    const currentZones = new Set(managementZoneIds);
+    const occurrences = candidates
+      .filter((candidate) => {
+        if ((candidate.problemId ?? '') === currentProblemId || (candidate.displayId ?? '') === currentDisplayId) return false;
+        if ((candidate.title ?? '').trim() !== title) return false;
+        const candidateEntities = entityIds(candidate.affectedEntities);
+        const candidateZones = new Set(zoneIds(candidate.managementZones));
+        return candidateEntities.some((entityId) => currentEntities.has(entityId))
+          && [...candidateZones].some((zoneId) => currentZones.has(zoneId));
+      })
+      .map((candidate) => ({
+        problemId: candidate.displayId ?? candidate.problemId ?? '',
+        title: candidate.title ?? 'Dynatrace Problem',
+        status: candidate.status ?? 'Not available',
+        severity: candidate.severityLevel ?? 'Not available',
+        start: candidate.startTime ? new Date(candidate.startTime).toISOString() : '',
+        end: candidate.endTime !== undefined && candidate.endTime >= 0 ? new Date(candidate.endTime).toISOString() : '',
+        duration: duration(candidate.startTime, candidate.endTime),
+      }));
+
+    return { count: occurrences.length, occurrences };
+  } catch {
+    return { count: 0, occurrences: [] };
+  }
+}
+
 
 export default async function (payload: Payload) {
   if (!payload?.problemId || !/^P-\d+$/.test(payload.problemId)) {
@@ -53,6 +115,8 @@ export default async function (payload: Payload) {
   const affected = (problem.affectedEntities ?? []).map((item) => item.name).filter((name): name is string => Boolean(name));
   const zones = (problem.managementZones ?? []).map((zone) => zone.name).filter((name): name is string => Boolean(name));
   const durationValue = duration(problem.startTime, problem.endTime);
+  const eventEvidence = evidence.filter((item) => (item.evidenceType || '').toUpperCase() === 'EVENT');
+  const recurrence = await loadRecurrenceCount(problem);
   const confidence = root ? 'High' : 'Not established';
   const rootLine = root
     ? `Dynatrace identified ${root} as the root-cause entity.`
@@ -101,11 +165,13 @@ ${confidence}. This popup preview does not infer an exception, deployment, resou
     assistAnalysis: '',
     assistFallback: true,
     assistStatus: 'Not used in fast popup preview',
-    recurrenceWindow: 'Not loaded in popup preview',
+    recurrenceWindow: 'Last 30 days · same title + affected entity + management zone',
     managementZones: zones,
-    occurrenceCount: 0,
-    occurrences: [],
+    occurrenceCount: recurrence.count,
+    occurrences: recurrence.occurrences,
     title: problem.title || 'Dynatrace Problem',
+    alertDescription: problem.title || 'Dynatrace Problem',
+    duration: durationValue,
     status: problem.status || 'Not available',
     severityLevel: problem.severityLevel || 'Not available',
     impactLevel: problem.impactLevel || 'Not available',
@@ -131,9 +197,9 @@ ${confidence}. This popup preview does not infer an exception, deployment, resou
       affectedEntities: affected.join(', ') || 'Not available',
     },
     evidenceSummary: {
-      correlatedEvents: relevant.length,
+      correlatedEvents: eventEvidence.length,
       incidentLogs: 0,
-      historicalOccurrences: 0,
+      historicalOccurrences: recurrence.count,
       timelineSnapshots: 0,
     },
     problemAnalysis: {
@@ -162,7 +228,7 @@ ${confidence}. This popup preview does not infer an exception, deployment, resou
       analysisReady: Boolean(root),
       affectedUsers: undefined,
       logs: [],
-      historicalOccurrences: [],
+      historicalOccurrences: recurrence.occurrences,
       timelineSnapshots: [],
       managementZones: zones,
     },
