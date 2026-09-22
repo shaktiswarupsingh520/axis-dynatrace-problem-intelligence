@@ -144,9 +144,7 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
   const affected = text(facts.affectedEntities) || 'Not available';
   const analysis = result.analysis || '';
 
-  const executive = section(analysis, ['executive summary']) || 'Not available from retrieved evidence.';
   const rootAssessment = section(analysis, ['root cause assessment']) || 'Not available from retrieved evidence.';
-  const chain = section(analysis, ['technical root-cause chain']) || 'Not available from retrieved evidence.';
   const immediate = section(analysis, ['immediate remediation plan']) || 'Not available from retrieved evidence.';
   const preventive = section(analysis, ['permanent / preventive actions']) || 'Not available from retrieved evidence.';
   const monitoring = section(analysis, ['monitoring & alerting recommendations']) || 'Not available from retrieved evidence.';
@@ -163,7 +161,6 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     pdfRect(c, 0, 0, 595, 842, '0.06 0.13 0.25');
     pdfRect(c, 0, 0, 12, 842, '0.18 0.39 0.78');
     pdfText(c, 48, 775, 'AXIS BANK', 11, true, '1 1 1');
-    pdfText(c, 48, 756, 'ApMoSys TECHNOLOGIES', 7.5, false, '0.72 0.80 0.90');
     pdfText(c, 48, 690, 'EVIDENCE-FIRST', 8, true, '0.45 0.78 1');
     pdfText(c, 48, 655, 'INCIDENT ROOT', 28, true, '1 1 1');
     pdfText(c, 48, 622, 'CAUSE ANALYSIS', 28, true, '1 1 1');
