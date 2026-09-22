@@ -310,10 +310,10 @@ The native Dynatrace Problems API result is the authoritative root-cause source.
 3. Supporting evidence: ${causal.length ? causalNames.join('; ') : 'No retrieved Davis event is marked root-cause relevant.'}
 4. Validation boundary: ${technicalBoundary}
 ${causalDescriptions.length ? `Evidence details:
-${causalDescriptions.join('\\n')}` : 'Evidence details: No root-cause-relevant Davis event details were retrieved.'}
+${causalDescriptions.join('\n')}` : 'Evidence details: No root-cause-relevant Davis event details were retrieved.'}
 
 ## Incident Timeline
-${snapshotLines.length ? snapshotLines.join('\\n') : causal.length ? causal.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\\n') : 'Not available from retrieved evidence.'}
+${snapshotLines.length ? snapshotLines.join('\n') : causal.length ? causal.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available from retrieved evidence.'}
 
 ## Past Occurrences & Recurrence Pattern
 ${occurrences.length ? `${occurrences.length} matching Davis occurrence(s) retrieved from the last 30 days.` : 'No matching past occurrences were retrieved from the last 30 days.'}
