@@ -311,12 +311,10 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     else { pdfText(c, 48, y - 15, 'No root-cause-relevant Davis event details were retrieved.', 8.5); y -= 28; }
     y -= 16;
     y = drawSectionTitle(c, 48, y, 'Evidence Timeline', 'Chronology of retrieved Davis observations');
-    const timelineText = section(analysis, ['incident timeline']) || 'Not available from retrieved evidence.';
-    const timelineLines = wrap(timelineText, 88).filter(Boolean).slice(0, 8);
-    timelineLines.forEach((line, i) => {
-      pdfText(c, 58, y - 15 - i * 14, line, 8.2);
-    });
-    y -= Math.max(32, timelineLines.length * 14 + 16);
+    pdfRect(c, 48, y - 74, 491, 52, '0.95 0.97 0.99');
+    pdfText(c, 64, y - 43, 'DETAILED TIMELINE NOT DISPLAYED', 7, true, '0.18 0.39 0.78');
+    drawParagraph(c, 64, y - 58, 'Chronological Davis observations are intentionally omitted from this report. The underlying Davis timeline remains available in Dynatrace.', 82, 7.8, 10, 3);
+    y -= 88;
 
     y = drawSectionTitle(c, 48, y, 'Recurrence pattern', 'Evidence-matched historical occurrences; current problem excluded');
     const rows = occurrences.map((o) => [o.problemId, o.title, o.status, o.severity, o.duration]);
