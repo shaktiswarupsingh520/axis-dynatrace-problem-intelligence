@@ -11,7 +11,7 @@ export interface CioRcaResult {
 const text = (value: unknown): string => { if (value == null) return ''; if (typeof value === 'string') return value; if (typeof value === 'number' || typeof value === 'boolean') return String(value); if (Array.isArray(value)) return value.map(text).filter(Boolean).join(', '); return ''; };
 const section = (analysis: string, names: string[]): string => { const lines = analysis.split(/\r?\n/); const index = lines.findIndex((line) => names.some((name) => line.toLowerCase().includes(name.toLowerCase()))); if (index < 0) return ''; const body: string[] = []; for (let i = index + 1; i < lines.length; i += 1) { if (/^\s*#{1,6}\s+/.test(lines[i])) break; body.push(lines[i]); } return body.join('\n').trim(); };
 const escapeText = (value: string): string => value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
-const cleanDateValue = (value: unknown): string => String(value ?? '').replace(/^"(.*)"$/, '$1').trim();
+const cleanDateValue = (value: unknown): string => { if (typeof value === 'string') return value.replace(/^"(.*)"$/, '$1').trim(); if (value == null) return ''; return typeof value === 'number' || typeof value === 'boolean' ? String(value) : ''; };
 const dateText = (value: unknown): string => { const cleaned = cleanDateValue(value); const date = new Date(cleaned); return Number.isFinite(date.getTime()) ? date.toLocaleString() : cleaned || '—'; };
 export function buildCioRcaHtml(result: CioRcaResult): string {
   const facts = result.problemFacts ?? {}; const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived'; const root = result.nativeRootCauseEntity || 'Not proven by available evidence';
