@@ -402,7 +402,35 @@ async function assist(id: string, evidence: Evidence): Promise<string> {
   return answer;
 }
 
-export default async function (payload: Payload) {
+type ApiResult = {
+  problemId: string;
+  displayId: string;
+  displayName: string;
+  analysis: string;
+  assistAnalysis: string;
+  generatedAt: string;
+  nativeRootCauseEntity: string | null;
+  definitiveRootCause: boolean;
+  assistFallback: boolean;
+  assistStatus: string;
+  recurrenceWindow: string;
+  managementZones: string[];
+  occurrenceCount: number;
+  occurrences: Row[];
+  title: string;
+  status: string;
+  severityLevel: string;
+  impactLevel: string;
+  startTime: string;
+  endTime: string;
+  evidenceDetails: { details: Row[] };
+  impactAnalysis: { impacts: Row[] };
+  problemFacts: Row;
+  evidenceSummary: Row;
+  problemAnalysis: Row;
+};
+
+export default async function (payload: Payload): Promise<ApiResult> {
   if (!payload?.problemId) throw new Error('problemId is required');
   if (!/^P-\d+$/.test(payload.problemId)) throw new Error('A valid Dynatrace Problem ID such as P-260948426 is required.');
 
@@ -498,5 +526,5 @@ export default async function (payload: Payload) {
       timelineSnapshots: safeTimelineSnapshots.slice(0, 80),
       managementZones: evidence.managementZones,
     },
-  }) as Record<string, unknown>;
+  }) as ApiResult;
 }
