@@ -52,11 +52,12 @@ const wrap = (value: string, width = 82): string[] => {
 
 function pdfPage(lines: string[], pageNumber: number, totalPages: number, firstPage: boolean): string {
   const commands: string[] = [];
+  // White text on the dark header for contrast. Keep the body on a clean white page.
   commands.push('q 0.96 0.98 1 rg 0 0 595 842 re f Q');
   commands.push('q 0.08 0.24 0.42 rg 0 800 595 42 re f Q');
   commands.push('BT /F2 15 Tf 40 814 Td (AXIS BANK | Incident RCA) Tj ET');
   commands.push('BT /F1 8 Tf 40 801 Td (Evidence-first incident analysis) Tj ET');
-  commands.push('BT /F1 8 Tf 555 18 Td (Page ' + String(pageNumber) + ' of ' + String(totalPages) + ') Tj ET');
+  commands.push('BT /F1 8 Tf 500 18 Td (Page ' + String(pageNumber) + ' of ' + String(totalPages) + ') Tj ET');
   commands.push('BT /F1 8 Tf 40 18 Td (AXIS BANK | ApMoSys TECHNOLOGIES | Confidential) Tj ET');
 
   let y = 774;
@@ -68,18 +69,21 @@ function pdfPage(lines: string[], pageNumber: number, totalPages: number, firstP
   for (const line of lines) {
     if (line.startsWith('§')) {
       const heading = line.slice(1);
-      if (y < 80) break;
-      commands.push('q 0.90 0.94 0.98 rg 34 ' + String(y - 7) + ' 527 23 re f Q');
-      commands.push('BT /F2 12 Tf 42 ' + String(y) + ' Td (' + pdfEscape(heading) + ') Tj ET');
-      y -= 31;
+      if (y < 75) break;
+
+      // Draw the heading band strictly behind the heading itself. It must not cover the
+      // previous body line, which was the main readability defect in the old PDF.
+      commands.push('q 0.90 0.94 0.98 rg 34 ' + String(y - 9) + ' 527 20 re f Q');
+      commands.push('BT /F2 11.5 Tf 42 ' + String(y - 3) + ' Td (' + pdfEscape(heading) + ') Tj ET');
+      y -= 27;
     } else if (line.startsWith('!')) {
-      if (y < 55) break;
+      if (y < 58) break;
       commands.push('BT /F2 10.5 Tf 42 ' + String(y) + ' Td (' + pdfEscape(line.slice(1)) + ') Tj ET');
-      y -= 17;
+      y -= 16;
     } else {
-      if (y < 55) break;
-      commands.push('BT /F1 10 Tf 42 ' + String(y) + ' Td (' + pdfEscape(line) + ') Tj ET');
-      y -= 14;
+      if (y < 58) break;
+      commands.push('BT /F1 9.5 Tf 42 ' + String(y) + ' Td (' + pdfEscape(line) + ') Tj ET');
+      y -= 13.5;
     }
   }
   return commands.join('\n');
@@ -147,13 +151,15 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     'Dynatrace telemetry is treated as observed evidence. Dynatrace Assist is non-authoritative; generated interpretation and proposed actions require SRE/application validation before closure.'
   ));
 
+  // Conservative page budget with generous vertical spacing. Section headings are kept
+  // with their following content by giving each heading an explicit vertical cost.
   const pages: string[][] = [];
   let current: string[] = [];
   let used = 0;
-  const maxUnits = 47;
+  const maxUnits = 46;
 
   for (const line of all) {
-    const cost = line.startsWith('§') ? 2.4 : line.startsWith('!') ? 1.4 : 1;
+    const cost = line.startsWith('§') ? 2.1 : line.startsWith('!') ? 1.25 : 1;
     if (used + cost > maxUnits && current.length) {
       pages.push(current);
       current = [];
