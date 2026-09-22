@@ -1,4 +1,5 @@
 import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
+import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 type Payload = { problemId: string };
 type EntityStub = { name?: string; entityId?: { id?: string; type?: string } };
@@ -30,6 +31,31 @@ const entityIds = (entities?: EntityStub[]): string[] =>
   (entities ?? []).map((entity) => entity.entityId?.id).filter((id): id is string => Boolean(id));
 const zoneIds = (zones?: Array<{ id?: string; name?: string }>): string[] =>
   (zones ?? []).map((zone) => zone.id).filter((id): id is string => Boolean(id));
+
+async function loadProblemDescription(displayId: string): Promise<string> {
+  try {
+    const response = await queryExecutionClient.queryExecute({
+      body: {
+        query: `fetch dt.davis.problems, from:now()-30d, to:now()
+| filter display_id == "${q(displayId)}"
+| fields event.description
+| limit 1`,
+        requestTimeoutMilliseconds: 15000,
+        maxResultRecords: 1,
+      },
+    });
+    let result = response.result;
+    for (let attempt = 0; !result && response.requestToken && attempt < 20; attempt += 1) {
+      const poll = await queryExecutionClient.queryPoll({ requestToken: response.requestToken, requestTimeoutMilliseconds: 15000 });
+      result = poll.result;
+      if (!result) await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    }
+    const value = result?.records?.[0]?.['event.description'];
+    return typeof value === 'string' ? value : '';
+  } catch {
+    return '';
+  }
+}
 
 async function loadRecurrenceCount(problem: Problem): Promise<{ count: number; occurrences: Array<{ problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string }> }> {
   const title = problem.title?.trim();
@@ -117,6 +143,7 @@ export default async function (payload: Payload) {
   const durationValue = duration(problem.startTime, problem.endTime);
   const eventEvidence = evidence.filter((item) => (item.evidenceType || '').toUpperCase() === 'EVENT');
   const recurrence = await loadRecurrenceCount(problem);
+  const alertDescription = await loadProblemDescription(problem.displayId || payload.problemId) || problem.title || 'Dynatrace Problem';
   const confidence = root ? 'High' : 'Not established';
   const rootLine = root
     ? `Dynatrace identified ${root} as the root-cause entity.`
@@ -128,6 +155,8 @@ export default async function (payload: Payload) {
   });
 
   const analysis = `## Executive Summary
+${alertDescription}
+
 ${rootLine} The finding is based on the native Dynatrace Problems API. Confidence: ${confidence}.
 
 ## Incident Overview
@@ -170,7 +199,7 @@ ${confidence}. This popup preview does not infer an exception, deployment, resou
     occurrenceCount: recurrence.count,
     occurrences: recurrence.occurrences,
     title: problem.title || 'Dynatrace Problem',
-    alertDescription: problem.title || 'Dynatrace Problem',
+    alertDescription,
     duration: durationValue,
     status: problem.status || 'Not available',
     severityLevel: problem.severityLevel || 'Not available',
