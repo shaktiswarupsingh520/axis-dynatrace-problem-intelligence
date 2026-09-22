@@ -279,6 +279,14 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
       wrap(causalEvidenceNames.join('; '), 82).slice(0, 2).forEach((line, i) => pdfText(c, 150, y - 39 - i * 10, line, 7.8));
     }
 
+    drawSectionTitle(c, 48, 405, 'Technical trigger assessment', 'What the retrieved evidence establishes vs what still requires validation');
+    drawTable(c, 48, 371, [150, 341], ['Investigation area', 'Evidence status'], [
+      ['Davis root-cause entity', root !== 'Not proven by available evidence' ? 'Established by native Problems API' : 'Not established'],
+      ['Correlated Davis events', String(result.evidenceSummary.correlatedEvents) + ' retrieved'],
+      ['Application logs', String(result.evidenceSummary.incidentLogs) + ' retrieved'],
+      ['Specific technical trigger', 'Requires application, dependency or resource telemetry when not retrieved']
+    ], 25);
+
     pdfRect(c, 48, 105, 491, 92, '0.97 0.96 0.91');
     pdfText(c, 62, 178, 'PROVEN VS. REQUIRES VALIDATION', 7, true, '0.70 0.42 0.08');
     pdfText(c, 62, 158, 'PROVEN', 7, true, '0.16 0.65 0.43');
