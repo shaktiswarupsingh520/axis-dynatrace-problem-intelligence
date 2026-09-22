@@ -38,7 +38,7 @@ async function loadProblemDescription(displayId: string): Promise<string> {
       body: {
         query: `fetch dt.davis.problems, from:now()-30d, to:now()
 | filter display_id == "${q(displayId)}"
-| fields event.description
+| sort event.start desc
 | limit 1`,
         requestTimeoutMilliseconds: 15000,
         maxResultRecords: 1,
@@ -50,8 +50,12 @@ async function loadProblemDescription(displayId: string): Promise<string> {
       result = poll.result;
       if (!result) await new Promise<void>((resolve) => setTimeout(resolve, 250));
     }
+
     const value = result?.records?.[0]?.['event.description'];
-    return typeof value === 'string' ? value : '';
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+
+    return '';
   } catch {
     return '';
   }
