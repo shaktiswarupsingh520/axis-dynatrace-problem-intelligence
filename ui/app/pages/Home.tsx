@@ -5,7 +5,7 @@ import type { Problem, ProblemsResponse } from '../types/problems';
 import { downloadCioRcaPdf, type CioRcaResult } from './RcaWorkbenchReport';
 import './Home.css';
 
-type RcaPreview = Omit<CioRcaResult, 'generatedAt' | 'occurrences'> & { generatedAt?: string; occurrences?: CioRcaResult['occurrences'] };
+type RcaPreview = Omit<CioRcaResult, 'generatedAt' | 'occurrences'> & { generatedAt?: string; occurrences?: CioRcaResult['occurrences']; alertDescription?: string };
 const asReportResult = (preview: RcaPreview): CioRcaResult => ({ ...preview, generatedAt: preview.generatedAt ?? new Date().toISOString(), occurrences: preview.occurrences ?? [] });
 const upper = (value?: string) => (value ?? '').toUpperCase();
 const formatTimestamp = (timestamp?: number) => timestamp ? new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'medium' }).format(new Date(timestamp)) : '—';
