@@ -268,21 +268,36 @@ function deterministicRca(id: string, evidence: Evidence, root: NativeRootCause 
   const start = s(p['event.start']);
   const end = s(p['event.end']);
   const causal = evidence.events.filter((e) => e['dt.davis.is_rootcause_relevant'] === true);
+  const causalNames = causal.map((e) => s(e['event.name'])).filter(Boolean).slice(0, 6);
+  const causalDescriptions = causal.map((e) => {
+    const name = s(e['event.name']) || 'Davis event';
+    const description = s(e['event.description']);
+    const entity = s(e['dt.smartscape_source.name']) || s(e['dt.source_entity']) || s(e['dt.smartscape_source.id']);
+    return [name, entity ? `on ${entity}` : '', description ? `— ${description}` : ''].filter(Boolean).join(' ');
+  }).filter(Boolean).slice(0, 6);
+  const snapshotLines = evidence.snapshots.slice(0, 12).map((e) => `${s(e.timestamp) || 'Time unavailable'} — ${snapshotStatus(e)}`);
+  const affectedEntities = s(p.affected_entity_names) || s(p.affected_entity_ids) || 'Not available';
+  const durationValue = duration(start, end);
+  const technicalBoundary = root
+    ? 'The retrieved evidence establishes the Davis root-cause entity, but it does not by itself establish a specific exception, deployment, resource saturation or downstream dependency as the technical trigger.'
+    : 'A technical root cause is not established because Dynatrace did not expose a definitive root-cause entity in the retrieved evidence.';
+
   const rootLine = root
     ? `Dynatrace identified ${root.name} as the root-cause entity.`
     : 'Dynatrace did not expose a definitive root-cause entity for this problem.';
   return `## Executive Summary
-${title} (${id}) is ${status.toLowerCase()} with severity ${severity}. ${rootLine}
+Dynatrace detected a ${title.toLowerCase()} problem with status ${status} and severity ${severity}. ${rootLine}
+The affected service scope includes ${affectedEntities}. The RCA retrieved ${causal.length} root-cause-relevant Davis event(s), ${evidence.snapshots.length} timeline observation(s), ${evidence.logs.length} incident log(s), and ${occurrences.length} evidence-matched historical occurrence(s).
+${technicalBoundary}
 
 ## Incident Overview
 Title: ${title}
 Status: ${status}
 Severity: ${severity}
 Category: ${s(p['event.category']) || 'Not available'}
-Started: ${start || 'Not available'}
-Ended: ${end || 'Not available'}
-Duration: ${duration(start, end)}
-Affected entities: ${s(p.affected_entity_names) || s(p.affected_entity_ids) || 'Not available'}
+Duration: ${durationValue}
+Affected entities: ${affectedEntities}
+Management zones: ${evidence.managementZones.length ? evidence.managementZones.join(', ') : 'Not derived from retrieved evidence'}
 
 ## Root Cause Assessment
 ${rootLine}
@@ -290,12 +305,15 @@ Root-cause entity type: ${root?.type || 'Not available'}
 The native Dynatrace Problems API result is the authoritative root-cause source.
 
 ## Technical Root-Cause Chain
-${root ? root.name : 'Root cause not established'}
-${causal.length ? `Supporting Davis evidence: ${causal.length} root-cause-relevant event(s) retrieved.` : 'No retrieved Davis event is marked root-cause relevant.'}
-No additional service-to-service causal relationship is asserted unless it is explicitly supported by retrieved Dynatrace evidence.
+1. Detection: Dynatrace reported a ${title.toLowerCase()} problem.
+2. Davis root-cause finding: ${root?.name || 'No definitive root-cause entity exposed'}.
+3. Supporting evidence: ${causal.length ? causalNames.join('; ') : 'No retrieved Davis event is marked root-cause relevant.'}
+4. Validation boundary: ${technicalBoundary}
+${causalDescriptions.length ? `Evidence details:
+${causalDescriptions.join('\\n')}` : 'Evidence details: No root-cause-relevant Davis event details were retrieved.'}
 
 ## Incident Timeline
-${evidence.snapshots.length ? evidence.snapshots.slice(0, 12).map((e) => `${s(e.timestamp) || 'Time unavailable'} — ${snapshotStatus(e)}`).join('\n') : evidence.events.length ? evidence.events.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available from retrieved evidence.'}
+${snapshotLines.length ? snapshotLines.join('\\n') : causal.length ? causal.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\\n') : 'Not available from retrieved evidence.'}
 
 ## Past Occurrences & Recurrence Pattern
 ${occurrences.length ? `${occurrences.length} matching Davis occurrence(s) retrieved from the last 30 days.` : 'No matching past occurrences were retrieved from the last 30 days.'}
@@ -303,24 +321,40 @@ ${occurrences.length ? `${occurrences.length} matching Davis occurrence(s) retri
 ## Impact Assessment
 Impact level: ${s(p['dt.davis.impact_level']) || 'Not available'}
 Affected users: ${s(p['dt.davis.affected_users_count']) || 'Not available'}
+Affected entities: ${affectedEntities}
 Incident logs retrieved: ${evidence.logs.length}
 
 ## Immediate Remediation Plan
-Validate the Davis causal entity and affected dependency against the incident timeline before making a production change.
+1. Validate ${root?.name || 'the affected service scope'} against the Davis evidence and current service health.
+2. Correlate application exceptions and service metrics with the retrieved Davis event(s).
+3. Check dependency telemetry and recent application/configuration changes.
+4. Confirm recovery and verify that the same evidence signature does not remain active.
+These are investigation actions only; no remediation result is claimed.
 
 ## Permanent / Preventive Actions
-No remediation result is claimed. Define permanent actions only after validating the observed causal signal.
+Permanent remediation should be assigned only after the technical trigger is validated.
+If validation identifies an application defect, deployment/configuration issue, resource constraint or dependency failure, map the corrective action to that confirmed cause rather than inferring one from the problem title alone.
 
 ## Monitoring & Alerting Recommendations
-Monitor the affected entity and retrieved Davis causal signal. Correlate application logs when available.
+Monitor the identified root-cause entity and its failure-rate signal.
+Correlate Davis problems with application exceptions, dependency health and relevant service/resource telemetry.
+Track recurrence using the same affected-entity/root-cause signature.
+Where application logs are available, retain the relevant evidence around future incidents for RCA closure.
 
 ## Validation Checklist
-Confirm recovery, verify the causal signal returns to baseline, and verify the same evidence signature does not recur.
+1. Confirm the problem has recovered.
+2. Verify the Davis root-cause signal returns to baseline.
+3. Correlate the service with application exceptions and dependency telemetry.
+4. Check recent deployments/configuration changes.
+5. Confirm the same evidence signature does not recur.
+6. Record the validated technical trigger before closing the RCA.
 
 ## RCA Confidence & Evidence Gaps
 Confidence: ${root ? 'High — native Problems API exposed a root-cause entity.' : (p['dt.analysis.ready'] === false ? 'Pending Davis analysis.' : 'Evidence based — no definitive root cause exposed.')}
 Observed evidence: ${evidence.events.length} Davis events, ${evidence.logs.length} logs, ${evidence.snapshots.length} timeline snapshots.
-No unobserved metric values, deployments, user impact, or infrastructure causes are asserted.`;
+Evidence gap: ${evidence.logs.length === 0 ? 'No incident logs were retrieved.' : 'Incident logs were retrieved.'}
+${technicalBoundary}
+No unobserved metric values, deployments, exception types, infrastructure causes or user-impact values are asserted.`;
 }
 
 async function assist(id: string, evidence: Evidence): Promise<string> {
