@@ -37,7 +37,6 @@ export const Home = () => {
     } catch (cause: unknown) {
       // Keep the incident modal mounted when RCA preview fails so the user can
       // still see the selected problem and the actual error/retry control.
-      setDetail(selectedProblem);
       setRca(null); setRcaError(cause instanceof Error ? cause.message : 'Unable to generate RCA');
     } finally {
       setDetailBusy(false); setRcaBusy(false);
