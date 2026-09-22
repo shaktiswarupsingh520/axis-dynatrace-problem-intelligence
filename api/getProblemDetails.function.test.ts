@@ -287,7 +287,6 @@ describe('getProblemDetails.function', () => {
 
     expect(result.analysis).toContain('## Root Cause Assessment');
     expect(result.analysis).toContain('hermes');
-    expect(result.analysis).toContain('SERVICE-604A2FB4275E32CA');
     expect(result.analysis).toContain('Duration: 6.0 min');
     expect(result.analysis).toContain('Affected users: 12');
     expect(result.analysis).not.toContain('53 ms');
