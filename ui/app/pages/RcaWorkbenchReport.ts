@@ -4,7 +4,7 @@ export interface CioRcaResult {
   occurrences?: Array<{ problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string }>;
   managementZones?: string[]; recurrenceWindow?: string;
   evidenceSummary: { correlatedEvents: number; incidentLogs: number; historicalOccurrences: number; timelineSnapshots: number };
-  problemFacts?: { title?: string; status?: string; severity?: string; category?: string; start?: string; end?: string; duration?: string; impactLevel?: string; affectedUsers?: string | number; affectedEntities?: string | number };
+  problemFacts?: { title?: string; status?: string; severity?: string; category?: string; start?: string; end?: string; duration?: string; impactLevel?: string; affectedUsers?: string | number; affectedEntities?: string | number };\n  causalEvents?: Array<{ id: string; name: string; description: string; entityId: string; entityType: string }>;\n  timelineSnapshots?: Array<Record<string, unknown>>;
 }
 const text = (value: unknown): string => { if (value == null) return ''; if (typeof value === 'string') return value; if (typeof value === 'number' || typeof value === 'boolean') return String(value); if (Array.isArray(value)) return value.map(text).filter(Boolean).join(', '); return ''; };
 const section = (analysis: string, names: string[]): string => { const lines = analysis.split(/\r?\n/); const index = lines.findIndex((line) => names.some((name) => line.toLowerCase().includes(name.toLowerCase()))); if (index < 0) return ''; const body: string[] = []; for (let i = index + 1; i < lines.length; i += 1) { if (/^\s*#{1,6}\s+/.test(lines[i])) break; body.push(lines[i]); } return body.join('\n').trim(); };
@@ -210,7 +210,7 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     drawCard(c, 300, 675, 116, 55, 'Severity', text(facts.severity) || 'Not available', '0.95 0.65 0.20');
     drawCard(c, 426, 675, 113, 55, 'Category', text(facts.category) || 'Not available', '0.18 0.39 0.78');
 
-    pdfRect(c, 48, 530, 491, 110, '0.95 0.97 0.99');
+    pdfRect(c, 48, 510, 491, 130, '0.95 0.97 0.99');
     pdfText(c, 62, 620, 'EXECUTIVE SUMMARY', 7, true, '0.18 0.39 0.78');
     const executiveSummary = [
       'Dynatrace detected a Failure rate increase affecting the reported service scope.',
@@ -220,11 +220,14 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
         String(result.evidenceSummary.timelineSnapshots) + ' timeline snapshots.',
       'The underlying technical trigger is not asserted beyond the retrieved evidence; application logs and additional telemetry should be used for deeper validation.'
     ];
-    executiveSummary.forEach((line, i) => {
-      wrap(line, 90).forEach((wrapped, j) => pdfText(c, 62, 600 - (i * 21) - (j * 12), wrapped, 8.2));
+    let summaryY = 600;
+    executiveSummary.forEach((line) => {
+      const lines = wrap(line, 90).slice(0, 3);
+      lines.forEach((wrapped) => { pdfText(c, 62, summaryY, wrapped, 8.2); summaryY -= 11; });
+      summaryY -= 4;
     });
 
-    y = drawSectionTitle(c, 48, 516, 'Evidence coverage', 'Observed evidence available to this RCA');
+    y = drawSectionTitle(c, 48, 484, 'Evidence coverage', 'Observed evidence available to this RCA');
     const evidenceTableBottom = drawTable(c, 48, y, [190, 115, 186], ['Indicator', 'Observed', 'Interpretation'], [
       ['Root-cause entity', root, 'Native Problems API evidence'],
       ['Affected entities', affected, 'Problem impact scope'],
@@ -233,7 +236,7 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
       ['Timeline snapshots', String(result.evidenceSummary.timelineSnapshots), 'Retrieved Davis timeline']
     ], 27);
 
-    const incidentFactsTitleY = Math.max(245, evidenceTableBottom - 48);
+    const incidentFactsTitleY = Math.max(220, evidenceTableBottom - 28);
     drawSectionTitle(c, 48, incidentFactsTitleY, 'Incident facts');
     drawTable(c, 48, incidentFactsTitleY - 34, [190, 301], ['Attribute', 'Value'], [
       ['Title', text(facts.title) || 'Not available'],
@@ -270,6 +273,11 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     pdfText(c, 150, y + 2, String(result.evidenceSummary.correlatedEvents) + ' Davis events | ' + String(result.evidenceSummary.timelineSnapshots) + ' timeline snapshots | ' + String(result.evidenceSummary.incidentLogs) + ' logs', 7.8);
     pdfText(c, 62, y - 17, 'What is not proven', 7, true, '0.70 0.42 0.08');
     pdfText(c, 150, y - 17, 'Specific exception, deployment, resource or dependency trigger is not asserted without telemetry.', 7.8);
+    const causalEvidenceNames = (result.causalEvents ?? []).slice(0, 4).map((event) => event.name).filter(Boolean);
+    if (causalEvidenceNames.length) {
+      pdfText(c, 62, y - 39, 'Observed Davis evidence', 7, true, '0.18 0.39 0.78');
+      wrap(causalEvidenceNames.join('; '), 82).slice(0, 2).forEach((line, i) => pdfText(c, 150, y - 39 - i * 10, line, 7.8));
+    }
 
     pdfRect(c, 48, 105, 491, 92, '0.97 0.96 0.91');
     pdfText(c, 62, 178, 'PROVEN VS. REQUIRES VALIDATION', 7, true, '0.70 0.42 0.08');
@@ -288,13 +296,18 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     const c: string[] = [];
     drawHeader(c, 'Incident Timeline & Recurrence', 'Operational history retrieved for this problem', 4, totalPages);
     let y = 750;
-    y = drawSectionTitle(c, 48, 750, 'Evidence Timeline', 'Retrieved Davis evidence; incident start/end window omitted');
+    y = drawSectionTitle(c, 48, 750, 'Evidence observations', 'Root-cause-relevant Davis evidence retrieved for this problem');
+    const eventRows = (result.causalEvents ?? []).slice(0, 5).map((event) => [event.name || 'Davis event', event.entityId || '—', event.description || 'No description returned']);
+    if (eventRows.length) y = drawTable(c, 48, y, [135, 115, 241], ['Evidence', 'Entity', 'Observed detail'], eventRows, 34);
+    else { pdfText(c, 48, y - 15, 'No root-cause-relevant Davis event details were retrieved.', 8.5); y -= 28; }
+    y -= 16;
+    y = drawSectionTitle(c, 48, y, 'Evidence Timeline', 'Chronology of retrieved Davis observations');
     const timelineText = section(analysis, ['incident timeline']) || 'Not available from retrieved evidence.';
     wrap(timelineText, 88).filter(Boolean).slice(0, 12).forEach((line, i) => {
       pdfText(c, 58, 695 - i * 16, line, 8.5);
     });
 
-    y = drawSectionTitle(c, 48, 470, 'Recurrence pattern', 'Only evidence-matched occurrences are shown');
+    y = drawSectionTitle(c, 48, 410, 'Recurrence pattern', 'Evidence-matched historical occurrences; current problem excluded');
     const rows = occurrences.map((o) => [o.problemId, dateText(o.start), o.title, o.status, o.severity, o.duration]);
     if (rows.length) {
       drawTable(c, 48, y, [82, 128, 126, 72, 55, 28], ['Problem', 'Started', 'Title', 'Status', 'Sev', 'Dur'], rows, 25);
