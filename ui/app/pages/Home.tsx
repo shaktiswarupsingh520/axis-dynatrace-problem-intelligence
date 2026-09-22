@@ -32,10 +32,10 @@ export const Home = () => {
   const loadIncidentDetails = useCallback(async (id: string) => {
     setDetailBusy(true); setRcaBusy(true); setRcaError('');
     try {
-      const result = await callFunction<Problem & RcaPreview>('getProblemDetails', { problemId: id });
+      const result = await callFunction<Problem & RcaPreview>('getProblemRcaPreview', { problemId: id });
       setDetail(result); setRca(result);
     } catch (cause: unknown) {
-      setRca(null); setRcaError(cause instanceof Error ? cause.message : 'Unable to generate RCA');
+      setDetail(null); setRca(null); setRcaError(cause instanceof Error ? cause.message : 'Unable to generate RCA');
     } finally {
       setDetailBusy(false); setRcaBusy(false);
     }
