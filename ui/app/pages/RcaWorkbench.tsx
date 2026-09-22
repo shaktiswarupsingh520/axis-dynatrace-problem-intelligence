@@ -93,11 +93,21 @@ export function RcaWorkbench(): React.JSX.Element {
         problemFacts: {
           title: asText(source.title) || asText(source['event.name']) || 'Dynatrace Problem',
           status: asText(source.status) || asText(source['event.status']) || 'Not available',
-          severity: asText(source.severity) || asText(source['event.severity']) || 'Not available',
+          severity: asText(source.severity)
+            || asText(source.severityLevel)
+            || asText(source['event.severity'])
+            || asText(source.problemFacts && typeof source.problemFacts === 'object' ? (source.problemFacts as JsonObject).severity : '')
+            || 'Not available',
           category: asText(source.category) || asText(source['event.category']) || '',
-          start: asText(source.startTime) || asText(source['event.start']),
-          end: asText(source.endTime) || asText(source['event.end']),
-          duration: asText(source.problemFacts && typeof source.problemFacts === 'object' ? (source.problemFacts as JsonObject).duration : '') || asText(source.duration),
+          start: asText(source.startTime)
+            || asText(source['event.start'])
+            || asText(source.problemFacts && typeof source.problemFacts === 'object' ? (source.problemFacts as JsonObject).start : ''),
+          end: asText(source.endTime)
+            || asText(source['event.end'])
+            || asText(source.problemFacts && typeof source.problemFacts === 'object' ? (source.problemFacts as JsonObject).end : ''),
+          duration: asText(source.problemFacts && typeof source.problemFacts === 'object' ? (source.problemFacts as JsonObject).duration : '')
+            || asText(source.duration)
+            || asText(source.resolved_problem_duration),
           impactLevel: asText(source.impactLevel) || asText(source['dt.davis.impact_level']),
           affectedUsers: asText(pa.affectedUsers) || asText(source.affectedUsers),
           affectedEntities: asText(source.problemFacts && typeof source.problemFacts === 'object' ? (source.problemFacts as JsonObject).affectedEntities : '') || asText(source.affectedEntities),
