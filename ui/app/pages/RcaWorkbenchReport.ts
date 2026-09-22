@@ -303,11 +303,13 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     y -= 16;
     y = drawSectionTitle(c, 48, y, 'Evidence Timeline', 'Chronology of retrieved Davis observations');
     const timelineText = section(analysis, ['incident timeline']) || 'Not available from retrieved evidence.';
-    wrap(timelineText, 88).filter(Boolean).slice(0, 12).forEach((line, i) => {
-      pdfText(c, 58, 695 - i * 16, line, 8.5);
+    const timelineLines = wrap(timelineText, 88).filter(Boolean).slice(0, 8);
+    timelineLines.forEach((line, i) => {
+      pdfText(c, 58, y - 15 - i * 14, line, 8.2);
     });
+    y -= Math.max(32, timelineLines.length * 14 + 16);
 
-    y = drawSectionTitle(c, 48, 410, 'Recurrence pattern', 'Evidence-matched historical occurrences; current problem excluded');
+    y = drawSectionTitle(c, 48, y, 'Recurrence pattern', 'Evidence-matched historical occurrences; current problem excluded');
     const rows = occurrences.map((o) => [o.problemId, dateText(o.start), o.title, o.status, o.severity, o.duration]);
     if (rows.length) {
       drawTable(c, 48, y, [82, 128, 126, 72, 55, 28], ['Problem', 'Started', 'Title', 'Status', 'Sev', 'Dur'], rows, 25);
