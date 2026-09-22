@@ -437,7 +437,7 @@ export default async function (payload: Payload) {
   const safeHistoricalOccurrences = jsonSafe(occurrences.slice(0, 100)) as Row[];
   const safeTimelineSnapshots = jsonSafe(evidence.snapshots) as Row[];
 
-  return {
+  return jsonSafe({
     problemId: currentId,
     displayId: currentId,
     displayName: s(p['event.name']) || 'Dynatrace Problem',
@@ -491,12 +491,12 @@ export default async function (payload: Payload) {
       assistAnalysis,
       assistFallback,
       assistStatus,
-      analysisReady: p['dt.analysis.ready'],
+      analysisReady: p['dt.analysis.ready'] === true,
       affectedUsers: s(p['dt.davis.affected_users_count']) || undefined,
       logs: safeLogs.slice(0, 100),
       historicalOccurrences: safeHistoricalOccurrences,
       timelineSnapshots: safeTimelineSnapshots.slice(0, 80),
       managementZones: evidence.managementZones,
     },
-  };
+  }) as Record<string, unknown>;
 }
