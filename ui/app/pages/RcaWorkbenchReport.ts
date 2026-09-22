@@ -313,12 +313,12 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     pdfText(c, 62, 670, '01  VALIDATE', 7, true, '0.16 0.65 0.43');
     drawBulletList(c, 62, 650, wrap(immediate, 78).filter(Boolean).slice(0, 5), 78, 8.3);
 
-    y = drawSectionTitle(c, 48, 550, 'Permanent / preventive actions', 'Only actions supported by observed evidence or explicitly framed as validation');
+    drawSectionTitle(c, 48, 550, 'Permanent / preventive actions', 'Only actions supported by observed evidence or explicitly framed as validation');
     pdfRect(c, 48, 380, 491, 145, '0.97 0.97 0.99');
     pdfText(c, 62, 500, '02  PREVENT', 7, true, '0.18 0.39 0.78');
     drawBulletList(c, 62, 480, wrap(preventive, 78).filter(Boolean).slice(0, 7), 78, 8.3);
 
-    y = drawSectionTitle(c, 48, 350, 'Monitoring & alerting', 'Recommended correlation points');
+    drawSectionTitle(c, 48, 350, 'Monitoring & alerting', 'Recommended correlation points');
     pdfRect(c, 48, 185, 491, 135, '0.99 0.97 0.92');
     pdfText(c, 62, 296, '03  MONITOR', 7, true, '0.70 0.42 0.08');
     drawBulletList(c, 62, 276, wrap(monitoring, 78).filter(Boolean).slice(0, 7), 78, 8.3);
