@@ -22,7 +22,7 @@ type Problem = {
 const duration = (start?: number, end?: number): string => {
   if (!Number.isFinite(start)) return '—';
   const finish = end !== undefined && end >= 0 ? end : Date.now();
-  const minutes = Math.max(0, finish - (start as number)) / 60000;
+  const minutes = Math.max(0, finish - start) / 60000;
   return minutes < 60 ? `${minutes.toFixed(1)} min` : minutes < 1440 ? `${(minutes / 60).toFixed(1)} h` : `${(minutes / 1440).toFixed(1)} d`;
 };
 
