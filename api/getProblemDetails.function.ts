@@ -196,7 +196,35 @@ async function load(id: string): Promise<Evidence> {
 
   const logs = entityList ? await optionalDql(`fetch logs, from:now()-365d, to:now()\n| filter timestamp >= toTimestamp("${q(start)}") - 15m and timestamp <= toTimestamp("${q(end)}") + 15m\n| filter in(dt.source_entity,array(${entityList}))\n| fields timestamp,dt.source_entity,status,severity,content,message\n| sort timestamp asc\n| limit 100`, 100) : [];
 
-  const history = await optionalDql(`fetch dt.davis.problems, from:now()-30d, to:now()\n| filter not(dt.davis.is_duplicate) and event.name == "${q(s(problemRecord['event.name']))}"\n| fields display_id,event.name,event.status,event.severity,event.start,event.end,event.category,resolved_problem_duration,root_cause.smartscape_entity\n| sort event.start desc\n| limit 100`, 100);
+  const historyCandidates = await optionalDql(`fetch dt.davis.problems, from:now()-30d, to:now()
+| filter not(dt.davis.is_duplicate) and event.name == "${q(s(problemRecord['event.name']))}"
+| fields display_id,event.name,event.status,event.severity,event.start,event.end,event.category,resolved_problem_duration,affected_entity_ids,root_cause_entity_id,root_cause.smartscape_entity
+| sort event.start desc
+| limit 100`, 100);
+
+  const currentAffectedIds = new Set(affectedIds);
+  const nativeForHistory = nativeProblem.details && typeof nativeProblem.details === 'object' && !Array.isArray(nativeProblem.details)
+    ? nativeProblem.details
+    : undefined;
+  const nativeHistoryRoot = nativeForHistory ? resolveNativeRootCause(nativeForHistory) : null;
+  const grailHistoryRoot = s(problemRecord.root_cause_entity_id)
+    || (problemRecord['root_cause.smartscape_entity'] && typeof problemRecord['root_cause.smartscape_entity'] === 'object'
+      ? s((problemRecord['root_cause.smartscape_entity'] as Row).id)
+      : '');
+  const currentRootId = nativeHistoryRoot?.id || grailHistoryRoot;
+  const history = historyCandidates.filter((row) => {
+    const displayId = s(row.display_id);
+    if (!displayId || displayId === s(problemRecord.display_id)) return false;
+    const rowEntityIds = Array.isArray(row.affected_entity_ids)
+      ? row.affected_entity_ids.map(s).filter(Boolean)
+      : [s(row.affected_entity_ids)].filter(Boolean);
+    const rowRootId = s(row.root_cause_entity_id)
+      || (row['root_cause.smartscape_entity'] && typeof row['root_cause.smartscape_entity'] === 'object'
+        ? s((row['root_cause.smartscape_entity'] as Row).id)
+        : '');
+    return rowEntityIds.some((entityId) => currentAffectedIds.has(entityId))
+      || Boolean(currentRootId && rowRootId && currentRootId === rowRootId);
+  });
 
   const snapshots = await optionalDql(`fetch dt.davis.problems.snapshots, from:now()-365d, to:now()\n| filter event.id == "${q(s(problemRecord['event.id']))}"\n| fields timestamp,event.status,event.status_transition,event.severity,event.name,root_cause_entity_id\n| sort timestamp asc\n| limit 80`, 80);
 
