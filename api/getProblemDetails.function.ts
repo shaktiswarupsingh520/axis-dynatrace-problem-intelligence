@@ -91,11 +91,7 @@ function flattenZones(rows: Row[]): string[] {
   return [...new Set(values)].slice(0, 30);
 }
 
-function snapshotStatus(snapshot: Row): string {
-  const raw = snapshot.event;
-  const event = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Row : {};
-  return s(event.status_transition) || s(event.status) || 'Davis state';
-}
+
 
 function resolveNativeRootCause(details: unknown): NativeRootCause | null {
   if (!details || typeof details !== 'object' || Array.isArray(details)) return null;
