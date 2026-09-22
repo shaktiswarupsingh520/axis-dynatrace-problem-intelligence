@@ -11,7 +11,8 @@ export interface CioRcaResult {
 const text = (value: unknown): string => { if (value == null) return ''; if (typeof value === 'string') return value; if (typeof value === 'number' || typeof value === 'boolean') return String(value); if (Array.isArray(value)) return value.map(text).filter(Boolean).join(', '); return ''; };
 const section = (analysis: string, names: string[]): string => { const lines = analysis.split(/\r?\n/); const index = lines.findIndex((line) => names.some((name) => line.toLowerCase().includes(name.toLowerCase()))); if (index < 0) return ''; const body: string[] = []; for (let i = index + 1; i < lines.length; i += 1) { if (/^\s*#{1,6}\s+/.test(lines[i])) break; body.push(lines[i]); } return body.join('\n').trim(); };
 const escapeText = (value: string): string => value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
-const cleanDateValue = (value: string): string => value.replace(/^"(.*)"$/, '$1').trim();
+const cleanDateValue = (value: unknown): string => String(value ?? '').replace(/^"(.*)"$/, '$1').trim();
+const dateText = (value: unknown): string => { const cleaned = cleanDateValue(value); const date = new Date(cleaned); return Number.isFinite(date.getTime()) ? date.toLocaleString() : cleaned || '—'; };
 export function buildCioRcaHtml(result: CioRcaResult): string {
   const facts = result.problemFacts ?? {}; const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived'; const root = result.nativeRootCauseEntity || 'Not proven by available evidence';
   const names: Array<[string, string[]]> = [['Executive Summary',['executive summary']],['Incident Overview',['incident overview']],['Root Cause Assessment',['root cause assessment']],['Technical Root-Cause Chain',['technical root-cause chain']],['Incident Timeline',['incident timeline']],['Past Occurrences & Recurrence Pattern',['past occurrences','recurrence pattern']],['Impact Assessment',['impact assessment']],['Immediate Remediation Plan',['immediate remediation plan']],['Permanent / Preventive Actions',['permanent / preventive actions']],['Monitoring & Alerting Recommendations',['monitoring & alerting recommendations']],['Validation Checklist',['validation checklist']],['RCA Confidence & Evidence Gaps',['rca confidence & evidence gaps']]];
@@ -90,6 +91,15 @@ function drawCard(commands: string[], x: number, y: number, w: number, h: number
   pdfText(commands, x + 14, y + h - 18, label.toUpperCase(), 6.5, true, '0.42 0.48 0.56');
   const valueLines = wrap(value, Math.max(12, Math.floor((w - 28) / 6.2)));
   valueLines.slice(0, 2).forEach((line, i) => pdfText(commands, x + 14, y + h - 35 - i * 12, line, 10.5, true));
+}
+
+function drawParagraph(commands: string[], x: number, y: number, value: string, width: number, size = 8.3, lineGap = 12, maxLines = 20): number {
+  let cursor = y;
+  for (const line of wrap(value, width).slice(0, maxLines)) {
+    pdfText(commands, x, cursor, line, size);
+    cursor -= lineGap;
+  }
+  return cursor;
 }
 
 function drawBulletList(commands: string[], x: number, y: number, items: string[], maxWidth = 78, size = 9): number {
