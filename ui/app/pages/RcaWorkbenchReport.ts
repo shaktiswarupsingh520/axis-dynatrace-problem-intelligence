@@ -55,8 +55,14 @@ function pdfPage(lines: string[], pageNumber: number, totalPages: number, firstP
   // White text on the dark header for contrast. Keep the body on a clean white page.
   commands.push('q 0.96 0.98 1 rg 0 0 595 842 re f Q');
   commands.push('q 0.08 0.24 0.42 rg 0 800 595 42 re f Q');
+  // Explicitly set header text to white; PDF text color does not inherit a readable
+  // foreground from the background rectangle.
+  commands.push('1 1 1 rg');
   commands.push('BT /F2 15 Tf 40 814 Td (AXIS BANK | Incident RCA) Tj ET');
   commands.push('BT /F1 8 Tf 40 801 Td (Evidence-first incident analysis) Tj ET');
+  // Small white accent rule gives the header a cleaner, more intentional look.
+  commands.push('q 0.55 0.80 1 rg 40 795 90 2 re f Q');
+  commands.push('0 0 0 rg');
   commands.push('BT /F1 8 Tf 500 18 Td (Page ' + String(pageNumber) + ' of ' + String(totalPages) + ') Tj ET');
   commands.push('BT /F1 8 Tf 40 18 Td (AXIS BANK | ApMoSys TECHNOLOGIES | Confidential) Tj ET');
 
