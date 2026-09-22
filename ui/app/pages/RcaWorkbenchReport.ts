@@ -24,16 +24,16 @@ const pdfEscape = (value: string): string => value
   .replace(/·/g, '|')
   .replace(/[“”]/g, '"')
   .replace(/[‘’]/g, "'")
-  .replace(/[^\\x20-\\x7E]/g, '?')
+  .replace(/[^\x20-\x7E]/g, '?')
   .replace(/\\/g, '\\\\')
-  .replace(/\\(/g, '\\\\(')
-  .replace(/\\)/g, '\\\\)')
-  .replace(/[\\r\\n]+/g, ' ');
+  .replace(/\(/g, '\\(')
+  .replace(/\)/g, '\\)')
+  .replace(/[\r\n]+/g, ' ');
 
 const wrap = (value: string, width = 82): string[] => {
   const output: string[] = [];
-  for (const raw of value.split(/\\r?\\n/)) {
-    const line = raw.replace(/\\t/g, '    ').trim();
+  for (const raw of value.split(/\r?\n/)) {
+    const line = raw.replace(/\t/g, '    ').trim();
     if (!line) {
       output.push('');
       continue;
@@ -52,11 +52,10 @@ const wrap = (value: string, width = 82): string[] => {
 
 function pdfPage(lines: string[], pageNumber: number, totalPages: number, firstPage: boolean): string {
   const commands: string[] = [];
-  // Clean white page with a restrained corporate header; body text is intentionally larger for screen/PDF readability.
   commands.push('q 0.96 0.98 1 rg 0 0 595 842 re f Q');
   commands.push('q 0.08 0.24 0.42 rg 0 800 595 42 re f Q');
   commands.push('BT /F2 15 Tf 40 814 Td (AXIS BANK | Incident RCA) Tj ET');
-  commands.push('BT /F1 8 Tf 40 808 Td (Evidence-first incident analysis) Tj ET');
+  commands.push('BT /F1 8 Tf 40 801 Td (Evidence-first incident analysis) Tj ET');
   commands.push('BT /F1 8 Tf 555 18 Td (Page ' + String(pageNumber) + ' of ' + String(totalPages) + ') Tj ET');
   commands.push('BT /F1 8 Tf 40 18 Td (AXIS BANK | ApMoSys TECHNOLOGIES | Confidential) Tj ET');
 
@@ -83,7 +82,7 @@ function pdfPage(lines: string[], pageNumber: number, totalPages: number, firstP
       y -= 14;
     }
   }
-  return commands.join('\\n');
+  return commands.join('\n');
 }
 
 export function buildCioRcaPdf(result: CioRcaResult): Blob {
@@ -109,16 +108,16 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
   const all: string[] = [
     '!Problem: ' + result.problemId,
     '!Title: ' + (text(facts.title) || 'Dynatrace Problem'),
-    '!Status: ' + (text(facts.status) || '—') + '   Severity: ' + (text(facts.severity) || '—') + '   Duration: ' + (text(facts.duration) || '—'),
+    '!Status: ' + (text(facts.status) || '-') + '   Severity: ' + (text(facts.severity) || '-') + '   Duration: ' + (text(facts.duration) || '-'),
     '!Native root cause: ' + root,
     '!Recurrence scope: ' + (result.recurrenceWindow || '30d') + ' | ' + scope,
     '!Past occurrences: ' + String(result.occurrenceCount),
     '§Incident Facts',
     'Problem ID: ' + result.problemId,
-    'Category: ' + (text(facts.category) || '—'),
-    'Impact: ' + (text(facts.impactLevel) || '—'),
-    'Affected users: ' + (text(facts.affectedUsers) || '—'),
-    'Affected entities: ' + (text(facts.affectedEntities) || '—'),
+    'Category: ' + (text(facts.category) || '-'),
+    'Impact: ' + (text(facts.impactLevel) || '-'),
+    'Affected users: ' + (text(facts.affectedUsers) || '-'),
+    'Affected entities: ' + (text(facts.affectedEntities) || '-'),
     'Management zone: ' + scope,
     '§Evidence Coverage',
     'Correlated events: ' + String(result.evidenceSummary.correlatedEvents) + ' | Incident logs: ' + String(result.evidenceSummary.incidentLogs) + ' | Timeline snapshots: ' + String(result.evidenceSummary.timelineSnapshots)
@@ -148,7 +147,6 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     'Dynatrace telemetry is treated as observed evidence. Dynatrace Assist is non-authoritative; generated interpretation and proposed actions require SRE/application validation before closure.'
   ));
 
-  // Use explicit line budgets rather than squeezing 55 lines into a page. This keeps 10pt body text readable.
   const pages: string[][] = [];
   let current: string[] = [];
   let used = 0;
@@ -178,21 +176,21 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     const streamObject = pageObject + 1;
     const stream = pdfPage(pages[i], i + 1, pages.length, i === 0);
     objects.push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ' + String(streamObject) + ' 0 R >>');
-    objects.push('<< /Length ' + String(stream.length) + ' >>\\nstream\\n' + stream + '\\nendstream');
+    objects.push('<< /Length ' + String(stream.length) + ' >>\nstream\n' + stream + '\nendstream');
   }
 
-  let pdf = '%PDF-1.4\\n%AXIS\\n';
+  let pdf = '%PDF-1.4\n%AXIS\n';
   const offsets: number[] = [0];
   for (let i = 0; i < objects.length; i += 1) {
     offsets.push(pdf.length);
-    pdf += String(i + 1) + ' 0 obj\\n' + objects[i] + '\\nendobj\\n';
+    pdf += String(i + 1) + ' 0 obj\n' + objects[i] + '\nendobj\n';
   }
   const xref = pdf.length;
-  pdf += 'xref\\n0 ' + String(objects.length + 1) + '\\n0000000000 65535 f \\n';
+  pdf += 'xref\n0 ' + String(objects.length + 1) + '\n0000000000 65535 f \n';
   for (let i = 1; i <= objects.length; i += 1) {
-    pdf += String(offsets[i]).padStart(10, '0') + ' 00000 n \\n';
+    pdf += String(offsets[i]).padStart(10, '0') + ' 00000 n \n';
   }
-  pdf += 'trailer\\n<< /Size ' + String(objects.length + 1) + ' /Root 1 0 R >>\\nstartxref\\n' + String(xref) + '\\n%%EOF';
+  pdf += 'trailer\n<< /Size ' + String(objects.length + 1) + ' /Root 1 0 R >>\nstartxref\n' + String(xref) + '\n%%EOF';
   return new Blob([pdf], { type: 'application/pdf' });
 }
 
