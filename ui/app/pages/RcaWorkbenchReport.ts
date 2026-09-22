@@ -144,7 +144,6 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
   const executive = section(analysis, ['executive summary']) || 'Not available from retrieved evidence.';
   const rootAssessment = section(analysis, ['root cause assessment']) || 'Not available from retrieved evidence.';
   const chain = section(analysis, ['technical root-cause chain']) || 'Not available from retrieved evidence.';
-  const impact = section(analysis, ['impact assessment']) || 'Not available from retrieved evidence.';
   const immediate = section(analysis, ['immediate remediation plan']) || 'Not available from retrieved evidence.';
   const preventive = section(analysis, ['permanent / preventive actions']) || 'Not available from retrieved evidence.';
   const monitoring = section(analysis, ['monitoring & alerting recommendations']) || 'Not available from retrieved evidence.';
@@ -312,8 +311,7 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     y = drawSectionTitle(c, 48, y, 'Immediate stabilization', 'Actions to contain the current operational risk');
     pdfRect(c, 48, 575, 491, 118, '0.95 0.98 0.96');
     pdfText(c, 62, 670, '01  VALIDATE', 7, true, '0.16 0.65 0.43');
-    let yy = 650;
-    yy = drawBulletList(c, 62, yy, wrap(immediate, 78).filter(Boolean).slice(0, 5), 78, 8.3);
+    drawBulletList(c, 62, 650, wrap(immediate, 78).filter(Boolean).slice(0, 5), 78, 8.3);
 
     y = drawSectionTitle(c, 48, 550, 'Permanent / preventive actions', 'Only actions supported by observed evidence or explicitly framed as validation');
     pdfRect(c, 48, 380, 491, 145, '0.97 0.97 0.99');
