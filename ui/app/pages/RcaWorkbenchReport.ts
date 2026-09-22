@@ -4,7 +4,8 @@ export interface CioRcaResult {
   occurrences?: Array<{ problemId: string; title: string; status: string; severity: string; start: string; end: string; duration: string }>;
   managementZones?: string[]; recurrenceWindow?: string;
   evidenceSummary: { correlatedEvents: number; incidentLogs: number; historicalOccurrences: number; timelineSnapshots: number };
-  problemFacts?: { title?: string; status?: string; severity?: string; category?: string; start?: string; end?: string; duration?: string; impactLevel?: string; affectedUsers?: string | number; affectedEntities?: string | number };\n  causalEvents?: Array<{ id: string; name: string; description: string; entityId: string; entityType: string }>;\n  timelineSnapshots?: Array<Record<string, unknown>>;
+  problemFacts?: { title?: string; status?: string; severity?: string; category?: string; start?: string; end?: string; duration?: string; impactLevel?: string; affectedUsers?: string | number; affectedEntities?: string | number };  causalEvents?: Array<{ id: string; name: string; description: string; entityId: string; entityType: string }>;
+  timelineSnapshots?: Array<Record<string, unknown>>;
 }
 const text = (value: unknown): string => { if (value == null) return ''; if (typeof value === 'string') return value; if (typeof value === 'number' || typeof value === 'boolean') return String(value); if (Array.isArray(value)) return value.map(text).filter(Boolean).join(', '); return ''; };
 const section = (analysis: string, names: string[]): string => { const lines = analysis.split(/\r?\n/); const index = lines.findIndex((line) => names.some((name) => line.toLowerCase().includes(name.toLowerCase()))); if (index < 0) return ''; const body: string[] = []; for (let i = index + 1; i < lines.length; i += 1) { if (/^\s*#{1,6}\s+/.test(lines[i])) break; body.push(lines[i]); } return body.join('\n').trim(); };
