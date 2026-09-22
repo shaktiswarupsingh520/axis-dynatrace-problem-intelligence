@@ -185,7 +185,7 @@ async function load(id: string): Promise<Evidence> {
   const start = s(problemRecord['event.start']);
   const end = s(problemRecord['event.end']) || new Date().toISOString();
 
-  const events = eventList ? await optionalDql(`fetch dt.davis.events, from:now()-365d, to:now()\n| filter in(event.id,array(${eventList}))\n| fields event.id,event.name,event.type,event.status,event.severity,event.category,event.start,event.end,event.description,dt.source_entity,dt.smartscape_source.id,dt.smartscape_source.type,dt.query,dt.davis.is_rootcause_relevant\n| sort event.start asc\n| limit 100`, 100) : [];
+  const events = eventList ? await optionalDql(`fetch dt.davis.events, from:now()-365d, to:now()\n| filter in(event.id,array(${eventList}))\n| fields event.id,event.name,event.type,event.status,event.severity,event.category,event.start,event.end,event.description,dt.source_entity,dt.smartscape_source.id,dt.smartscape_source.name,dt.smartscape_source.type,dt.query,dt.davis.is_rootcause_relevant\n| sort event.start asc\n| limit 100`, 100) : [];
 
   const sourceIds = [...new Set([
     ...affectedIds,
@@ -291,7 +291,7 @@ The native Dynatrace Problems API result is the authoritative root-cause source.
 
 ## Technical Root-Cause Chain
 ${root ? root.name : 'Root cause not established'}
-${causal.length ? causal.slice(0, 10).map((e) => `→ ${s(e['event.name']) || 'Davis causal event'}${s(e['dt.smartscape_source.id']) || s(e['dt.source_entity']) ? ` [${s(e['dt.smartscape_source.id']) || s(e['dt.source_entity'])}]` : ''}`).join('\n') : '→ No retrieved Davis event is marked root-cause relevant.'}
+${causal.length ? causal.slice(0, 10).map((e) => `→ ${s(e['dt.smartscape_source.name']) || s(e['event.name']) || 'Davis causal event'}`).join('\n') : '→ No retrieved Davis event is marked root-cause relevant.'}
 
 ## Incident Timeline
 ${evidence.snapshots.length ? evidence.snapshots.slice(0, 12).map((e) => `${s(e.timestamp) || 'Time unavailable'} — ${snapshotStatus(e)}`).join('\n') : evidence.events.length ? evidence.events.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available from retrieved evidence.'}
