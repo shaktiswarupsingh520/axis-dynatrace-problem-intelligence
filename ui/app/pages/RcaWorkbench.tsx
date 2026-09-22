@@ -16,7 +16,6 @@ const asText = (value: unknown): string => {
   const json = JSON.stringify(value);
   return typeof json === 'string' ? json : '';
 };
-const dateText = (value?: string): string => { if (!value) return '—'; const d = new Date(value); return Number.isFinite(d.getTime()) ? d.toLocaleString() : value; };
 const durationText = (start?: string, end?: string, provided?: string): string => { const raw = asText(provided).trim(); if (raw && raw !== '-' && raw !== '—' && raw.toLowerCase() !== 'not available') return raw; if (!start || !end) return 'Not available'; const ms = new Date(end).getTime() - new Date(start).getTime(); if (!Number.isFinite(ms) || ms < 0) return 'Not available'; const minutes = Math.floor(ms / 60000); const seconds = Math.floor((ms % 60000) / 1000); if (minutes >= 60) return `${Math.floor(minutes / 60)}h ${minutes % 60}m`; return seconds ? `${minutes}m ${seconds}s` : `${minutes} min`; };
 const parseAnalysis = (analysis: string): Array<{ title: string; body: string }> => {
   const lines = analysis.split(/\r?\n/); const sections: Array<{ title: string; body: string }> = []; let current: { title: string; body: string } | null = null;
