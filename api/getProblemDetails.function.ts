@@ -269,7 +269,7 @@ function deterministicRca(id: string, evidence: Evidence, root: NativeRootCause 
   const end = s(p['event.end']);
   const causal = evidence.events.filter((e) => e['dt.davis.is_rootcause_relevant'] === true);
   const rootLine = root
-    ? `Davis identified ${root.name} as the root-cause entity (ID: ${root.id || 'not returned'}).`
+    ? `Dynatrace identified ${root.name} as the root-cause entity.`
     : 'Dynatrace did not expose a definitive root-cause entity for this problem.';
   return `## Executive Summary
 ${title} (${id}) is ${status.toLowerCase()} with severity ${severity}. ${rootLine}
@@ -291,7 +291,8 @@ The native Dynatrace Problems API result is the authoritative root-cause source.
 
 ## Technical Root-Cause Chain
 ${root ? root.name : 'Root cause not established'}
-${causal.length ? causal.slice(0, 10).map((e) => `→ ${s(e['dt.smartscape_source.name']) || s(e['event.name']) || 'Davis causal event'}`).join('\n') : '→ No retrieved Davis event is marked root-cause relevant.'}
+${causal.length ? `Supporting Davis evidence: ${causal.length} root-cause-relevant event(s) retrieved.` : 'No retrieved Davis event is marked root-cause relevant.'}
+No additional service-to-service causal relationship is asserted unless it is explicitly supported by retrieved Dynatrace evidence.
 
 ## Incident Timeline
 ${evidence.snapshots.length ? evidence.snapshots.slice(0, 12).map((e) => `${s(e.timestamp) || 'Time unavailable'} — ${snapshotStatus(e)}`).join('\n') : evidence.events.length ? evidence.events.slice(0, 8).map((e) => `${s(e['event.start']) || 'Time unavailable'} — ${s(e['event.name']) || 'Davis event'}`).join('\n') : 'Not available from retrieved evidence.'}
