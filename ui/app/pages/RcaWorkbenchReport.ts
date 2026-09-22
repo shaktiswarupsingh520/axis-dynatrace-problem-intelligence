@@ -9,7 +9,8 @@ export interface CioRcaResult {
 const text = (value: unknown): string => { if (value == null) return ''; if (typeof value === 'string') return value; if (typeof value === 'number' || typeof value === 'boolean') return String(value); if (Array.isArray(value)) return value.map(text).filter(Boolean).join(', '); return ''; };
 const section = (analysis: string, names: string[]): string => { const lines = analysis.split(/\r?\n/); const index = lines.findIndex((line) => names.some((name) => line.toLowerCase().includes(name.toLowerCase()))); if (index < 0) return ''; const body: string[] = []; for (let i = index + 1; i < lines.length; i += 1) { if (/^\s*#{1,6}\s+/.test(lines[i])) break; body.push(lines[i]); } return body.join('\n').trim(); };
 const escapeText = (value: string): string => value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char] ?? char);
-const dateText = (value: string): string => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleString() : value || '—'; };
+const cleanDateValue = (value: string): string => value.replace(/^"(.*)"$/, '$1').trim();
+const dateText = (value: string): string => { const cleaned = cleanDateValue(value); const date = new Date(cleaned); return Number.isFinite(date.getTime()) ? date.toLocaleString() : cleaned || '—'; };
 export function buildCioRcaHtml(result: CioRcaResult): string {
   const facts = result.problemFacts ?? {}; const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived'; const root = result.nativeRootCauseEntity || 'Not proven by available evidence';
   const names: Array<[string, string[]]> = [['Executive Summary',['executive summary']],['Incident Overview',['incident overview']],['Root Cause Assessment',['root cause assessment']],['Technical Root-Cause Chain',['technical root-cause chain']],['Incident Timeline',['incident timeline']],['Past Occurrences & Recurrence Pattern',['past occurrences','recurrence pattern']],['Impact Assessment',['impact assessment']],['Immediate Remediation Plan',['immediate remediation plan']],['Permanent / Preventive Actions',['permanent / preventive actions']],['Monitoring & Alerting Recommendations',['monitoring & alerting recommendations']],['Validation Checklist',['validation checklist']],['RCA Confidence & Evidence Gaps',['rca confidence & evidence gaps']]];
@@ -126,8 +127,8 @@ function drawTable(commands: string[], x: number, y: number, widths: number[], h
 
 const observedDuration = (start?: string, end?: string): string => {
   if (!start || !end) return '';
-  const a = new Date(start).getTime();
-  const b = new Date(end).getTime();
+  const a = new Date(cleanDateValue(start)).getTime();
+  const b = new Date(cleanDateValue(end)).getTime();
   if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return '';
   const minutes = (b - a) / 60000;
   return minutes < 60 ? Math.round(minutes) + ' min' : (minutes / 60).toFixed(1) + ' hr';
@@ -209,7 +210,7 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     wrap(executive, 92).slice(0, 5).forEach((line, i) => pdfText(c, 62, 601 - i * 13, line, 8.5));
 
     y = drawSectionTitle(c, 48, 516, 'Evidence coverage', 'Observed evidence available to this RCA');
-    drawTable(c, 48, y, [190, 115, 186], ['Indicator', 'Observed', 'Interpretation'], [
+    const evidenceTableBottom = drawTable(c, 48, y, [190, 115, 186], ['Indicator', 'Observed', 'Interpretation'], [
       ['Root-cause entity', root, 'Native Problems API evidence'],
       ['Affected entities', affected, 'Problem impact scope'],
       ['Correlated Davis events', String(result.evidenceSummary.correlatedEvents), 'Retrieved evidence'],
@@ -217,13 +218,13 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
       ['Timeline snapshots', String(result.evidenceSummary.timelineSnapshots), 'Retrieved Davis timeline']
     ], 27);
 
-    y -= 13;
-    drawSectionTitle(c, 48, y, 'Incident facts');
-    drawTable(c, 48, y - 34, [190, 301], ['Attribute', 'Value'], [
+    const incidentFactsTitleY = Math.max(245, evidenceTableBottom - 48);
+    drawSectionTitle(c, 48, incidentFactsTitleY, 'Incident facts');
+    drawTable(c, 48, incidentFactsTitleY - 34, [190, 301], ['Attribute', 'Value'], [
       ['Title', text(facts.title) || 'Not available'],
       ['Root cause', root],
-      ['Started', text(facts.start) || 'Not available'],
-      ['Ended', text(facts.end) || 'Not available'],
+      ['Started', dateText(text(facts.start))],
+      ['Ended', dateText(text(facts.end))],
       ['Impact level', text(facts.impactLevel) || 'Not available'],
       ['Affected users', text(facts.affectedUsers) || 'Not available']
     ], 24);
