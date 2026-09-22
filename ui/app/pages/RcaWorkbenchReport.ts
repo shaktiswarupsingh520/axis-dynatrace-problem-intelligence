@@ -18,7 +18,7 @@ export function buildCioRcaHtml(result: CioRcaResult): string {
   const occurrenceRows = (result.occurrences ?? []).slice(0, 50).map((o) => '<tr><td>' + escapeText(o.problemId) + '</td><td>' + escapeText(dateText(o.start)) + '</td><td>' + escapeText(o.title) + '</td><td>' + escapeText(o.status) + '</td><td>' + escapeText(o.severity) + '</td><td>' + escapeText(o.duration) + '</td></tr>').join('');
   const metrics = [['Status',text(facts.status)||'—'],['Severity',text(facts.severity)||'—'],['Duration',text(facts.duration)||'—'],['Recurrence',String(result.occurrenceCount)]];
   const metricHtml = metrics.map(([label,value]) => '<div><div class="label">' + escapeText(label) + '</div><div class="value">' + escapeText(value) + '</div></div>').join('');
-  return '<!doctype html><html><head><meta charset="utf-8"><title>Axis CIO RCA ' + escapeText(result.problemId) + '</title><style>body{font-family:Arial,sans-serif;margin:0;padding:28px;color:#172334;font-size:11px;line-height:1.5}.hero{padding:22px;border:1px solid #d5e1ee;border-radius:10px;background:#f5f9fd}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.label{font-size:9px;text-transform:uppercase;color:#6d7f92;font-weight:700}.value{margin-top:4px;font-weight:700}h1{font-size:24px;color:#173b70;margin:4px 0}h2{font-size:14px;color:#173b70;border-bottom:2px solid #d9e5f2;padding-bottom:5px;margin-top:22px}pre{font-family:Arial,sans-serif;white-space:pre-wrap;font-size:10px;line-height:1.5}table{width:100%;border-collapse:collapse;font-size:8px}th,td{padding:5px;text-align:left;border-bottom:1px solid #e4e9ef}th{background:#eef4f9}.note{margin-top:18px;padding:10px;background:#fff8e8;border-left:4px solid #e4a11b}</style></head><body><div class="hero"><div class="label">AXIS BANK | ApMoSys TECHNOLOGIES</div><h1>Evidence-First Incident Root Cause Analysis</h1><p><b>Problem:</b> ' + escapeText(result.problemId) + ' · <b>Title:</b> ' + escapeText(text(facts.title)||'Dynatrace Problem') + '<br><b>Generated:</b> ' + escapeText(dateText(result.generatedAt ?? new Date().toISOString())) + '</p><div class="grid">' + metricHtml + '</div><p><b>Root cause:</b> ' + escapeText(root) + '<br><b>Recurrence scope:</b> ' + escapeText(result.recurrenceWindow || 'Last 30 days') + '<br><b>Management zone:</b> ' + escapeText(scope) + '</p></div>' + body + '<section><h2>Occurrence Detail</h2><table><thead><tr><th>Problem</th><th>Started</th><th>Title</th><th>Status</th><th>Severity</th><th>Duration</th></tr></thead><tbody>' + (occurrenceRows || '<tr><td colspan="6">No occurrence records returned.</td></tr>') + '</tbody></table></section><div class="note"><b>Governance:</b> Dynatrace telemetry is treated as observed evidence. Dynatrace Assist is a separate non-authoritative writing/recommendation layer; proposed actions require SRE validation.</div></body></html>';
+  return '<!doctype html><html><head><meta charset="utf-8"><title>Axis CIO RCA ' + escapeText(result.problemId) + '</title><style>body{font-family:Arial,sans-serif;margin:0;padding:28px;color:#172334;font-size:11px;line-height:1.5}.hero{padding:22px;border:1px solid #d5e1ee;border-radius:10px;background:#f5f9fd}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.label{font-size:9px;text-transform:uppercase;color:#6d7f92;font-weight:700}.value{margin-top:4px;font-weight:700}h1{font-size:24px;color:#173b70;margin:4px 0}h2{font-size:14px;color:#173b70;border-bottom:2px solid #d9e5f2;padding-bottom:5px;margin-top:22px}pre{font-family:Arial,sans-serif;white-space:pre-wrap;font-size:10px;line-height:1.5}table{width:100%;border-collapse:collapse;font-size:8px}th,td{padding:5px;text-align:left;border-bottom:1px solid #e4e9ef}th{background:#eef4f9}.note{margin-top:18px;padding:10px;background:#fff8e8;border-left:4px solid #e4a11b}</style></head><body><div class="hero"><div class="label">AXIS BANK</div><h1>Evidence-First Incident Root Cause Analysis</h1><p><b>Problem:</b> ' + escapeText(result.problemId) + ' · <b>Title:</b> ' + escapeText(text(facts.title)||'Dynatrace Problem') + '<br><b>Generated:</b> ' + escapeText(dateText(result.generatedAt ?? new Date().toISOString())) + '</p><div class="grid">' + metricHtml + '</div><p><b>Root cause:</b> ' + escapeText(root) + '<br><b>Recurrence scope:</b> ' + escapeText(result.recurrenceWindow || 'Last 30 days') + '<br><b>Management zone:</b> ' + escapeText(scope) + '</p></div>' + body + '<section><h2>Occurrence Detail</h2><table><thead><tr><th>Problem</th><th>Started</th><th>Title</th><th>Status</th><th>Severity</th><th>Duration</th></tr></thead><tbody>' + (occurrenceRows || '<tr><td colspan="6">No occurrence records returned.</td></tr>') + '</tbody></table></section><div class="note"><b>Governance:</b> Dynatrace telemetry is treated as observed evidence. Dynatrace Assist is a separate non-authoritative writing/recommendation layer; proposed actions require SRE validation.</div></body></html>';
 }
 const pdfEscape = (value: string): string => value
   .replace(/—|–/g, '-')
@@ -65,7 +65,7 @@ const pdfLine = (commands: string[], x1: number, y1: number, x2: number, y2: num
 
 function drawHeader(commands: string[], title: string, subtitle: string, page: number, total: number): void {
   pdfRect(commands, 0, 790, 595, 52, '0.08 0.18 0.34');
-  pdfText(commands, 38, 818, 'AXIS BANK | ApMoSys TECHNOLOGIES', 9, true, '1 1 1');
+  pdfText(commands, 38, 818, 'AXIS BANK', 9, true, '1 1 1');
   pdfText(commands, 38, 800, title, 15, true, '1 1 1');
   pdfText(commands, 555, 801, String(page) + ' / ' + String(total), 8, false, '0.78 0.86 0.96');
   if (subtitle) pdfText(commands, 38, 787, subtitle, 7.5, false, '0.55 0.78 1');
@@ -138,7 +138,10 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
   const facts = result.problemFacts ?? {};
   const root = result.nativeRootCauseEntity || 'Not proven by available evidence';
   const scope = (result.managementZones ?? []).join(', ') || 'Management zone not derived';
-  const duration = text(facts.duration) || observedDuration(facts.start, facts.end) || 'Not available';
+  const rawDuration = text(facts.duration);
+  const duration = rawDuration && rawDuration !== '-' && rawDuration !== '—' && rawDuration.toLowerCase() !== 'not available'
+    ? rawDuration
+    : observedDuration(facts.start, facts.end) || 'Not available';
   const affected = text(facts.affectedEntities) || 'Not available';
   const analysis = result.analysis || '';
 
@@ -175,10 +178,11 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     drawCard(c, 300, 397, 113, 58, 'Duration', duration, '0.18 0.39 0.78');
     drawCard(c, 426, 397, 113, 58, 'Matching occurrences', String(result.occurrenceCount), '0.70 0.32 0.36');
 
-    pdfText(c, 48, 350, 'Incident window', 7, true, '0.48 0.58 0.69');
-    pdfText(c, 48, 332, text(facts.start) || 'Not available', 8.5, true, '1 1 1');
-    pdfText(c, 48, 313, 'to', 7, false, '0.48 0.58 0.69');
-    pdfText(c, 48, 295, text(facts.end) || 'Not available', 8.5, true, '1 1 1');
+    pdfText(c, 48, 350, 'INCIDENT SUMMARY', 7, true, '0.48 0.58 0.69');
+    pdfText(c, 48, 332, 'Duration', 7, true, '0.48 0.58 0.69');
+    pdfText(c, 110, 332, duration, 9.5, true, '1 1 1');
+    pdfText(c, 48, 312, 'Root cause type', 7, true, '0.48 0.58 0.69');
+    pdfText(c, 110, 312, 'SERVICE', 8.5, true, '1 1 1');
 
     pdfRect(c, 48, 230, 491, 48, '0.10 0.20 0.36');
     pdfText(c, 62, 258, 'ROOT-CAUSE ENTITY', 6.5, true, '0.45 0.78 1');
@@ -223,8 +227,6 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     drawTable(c, 48, incidentFactsTitleY - 34, [190, 301], ['Attribute', 'Value'], [
       ['Title', text(facts.title) || 'Not available'],
       ['Root cause', root],
-      ['Started', dateText(text(facts.start))],
-      ['Ended', dateText(text(facts.end))],
       ['Impact level', text(facts.impactLevel) || 'Not available'],
       ['Affected users', text(facts.affectedUsers) || 'Not available']
     ], 24);
@@ -246,7 +248,7 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     y -= Math.min(120, Math.max(50, wrap(rootAssessment, 92).length * 13 + 20));
 
     y = drawSectionTitle(c, 48, y, 'Technical root-cause chain', 'Observed chain only; inferred triggers remain explicitly marked');
-    const chainLines = wrap(chain, 92).filter(Boolean).slice(0, 14);
+    const chainLines = wrap(chain.replace(/\s*\[(?:SERVICE|PROCESS_GROUP|HOST)-[A-Z0-9_-]+\]/g, ''), 92).filter(Boolean).slice(0, 14);
     let cy = y;
     chainLines.forEach((line, i) => {
       pdfRect(c, 52, cy - 8, 9, 9, i === 0 ? '0.16 0.65 0.43' : '0.18 0.39 0.78');
@@ -272,23 +274,13 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     const c: string[] = [];
     drawHeader(c, 'Incident Timeline & Recurrence', 'Operational history retrieved for this problem', 4, totalPages);
     let y = 750;
-    y = drawSectionTitle(c, 48, y, 'Incident timeline', 'Primary Davis problem window');
-    const start = text(facts.start) || 'Not available';
-    const end = text(facts.end) || 'Not available';
-    pdfLine(c, 85, 665, 85, 585, '0.18 0.39 0.78', 2);
-    pdfRect(c, 78, 658, 14, 14, '0.18 0.39 0.78');
-    pdfText(c, 110, 662, 'Detection / problem start', 7, true, '0.42 0.48 0.56');
-    pdfText(c, 110, 646, start, 8.5, true);
-    pdfText(c, 340, 646, 'Davis problem opened', 7.5, false, '0.42 0.48 0.56');
-    pdfRect(c, 78, 608, 14, 14, '0.16 0.65 0.43');
-    pdfText(c, 110, 612, 'Recovery / problem end', 7, true, '0.42 0.48 0.56');
-    pdfText(c, 110, 596, end, 8.5, true);
-    pdfText(c, 340, 596, 'Davis problem closed', 7.5, false, '0.42 0.48 0.56');
-    pdfText(c, 110, 558, 'Duration', 7, true, '0.42 0.48 0.56');
-    pdfText(c, 110, 542, duration, 10, true);
-    pdfText(c, 340, 542, 'Calculated from supplied start/end when available', 7.5, false, '0.42 0.48 0.56');
+    y = drawSectionTitle(c, 48, 750, 'Evidence Timeline', 'Retrieved Davis evidence; incident start/end window omitted');
+    const timelineText = section(analysis, ['incident timeline']) || 'Not available from retrieved evidence.';
+    wrap(timelineText, 88).filter(Boolean).slice(0, 12).forEach((line, i) => {
+      pdfText(c, 58, 695 - i * 16, line, 8.5);
+    });
 
-    y = drawSectionTitle(c, 48, 505, 'Recurrence pattern', 'Only evidence-matched occurrences are shown');
+    y = drawSectionTitle(c, 48, 470, 'Recurrence pattern', 'Only evidence-matched occurrences are shown');
     const rows = occurrences.map((o) => [o.problemId, dateText(o.start), o.title, o.status, o.severity, o.duration]);
     if (rows.length) {
       drawTable(c, 48, y, [82, 128, 126, 72, 55, 28], ['Problem', 'Started', 'Title', 'Status', 'Sev', 'Dur'], rows, 25);
