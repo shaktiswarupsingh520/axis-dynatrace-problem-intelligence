@@ -11,7 +11,7 @@ describe('getProblemRcaPreview.function', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('returns a fast deterministic RCA preview from the Problems API', async () => {
-    mockedGetProblems.mockResolvedValue({
+    mockedGetProblems.mockResolvedValueOnce({
       totalCount: 1,
       problems: [{
         problemId: 'P-123',
@@ -30,13 +30,30 @@ describe('getProblemRcaPreview.function', () => {
       }],
     } as never);
 
+    mockedGetProblems.mockResolvedValueOnce({
+      totalCount: 1,
+      problems: [{
+        problemId: 'P-122',
+        displayId: 'P-122',
+        title: 'Failure rate increase',
+        status: 'CLOSED',
+        severityLevel: 'ERROR',
+        startTime: 1756700000000,
+        endTime: 1756703600000,
+        affectedEntities: [{ name: 'notifier.api.axisb.com:8080', entityId: { id: 'SERVICE-456', type: 'SERVICE' } }],
+        managementZones: [{ id: 'mz-1', name: 'NHIAcquirer_1261' }],
+      }],
+    } as never);
+
     const result = await getProblemRcaPreview({ problemId: 'P-123' });
 
-    expect(mockedGetProblems).toHaveBeenCalledTimes(1);
+    expect(mockedGetProblems).toHaveBeenCalledTimes(2);
     expect(result.nativeRootCauseEntity).toBe('hermes');
     expect(result.problemAnalysis.rootCause).toBe('hermes');
     expect(result.problemAnalysis.confidence).toBe('High');
     expect(result.evidenceSummary.correlatedEvents).toBe(1);
+    expect(result.occurrenceCount).toBe(1);
+    expect(result.problemFacts.duration).toBe('0.0 h');
     expect(result.managementZones).toEqual(['NHIAcquirer_1261']);
   });
 
