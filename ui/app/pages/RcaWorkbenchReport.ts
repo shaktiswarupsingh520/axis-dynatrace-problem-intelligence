@@ -150,7 +150,12 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
   const monitoring = section(analysis, ['monitoring & alerting recommendations']) || 'Not available from retrieved evidence.';
   const validation = section(analysis, ['validation checklist']) || 'Not available from retrieved evidence.';
   const confidence = section(analysis, ['rca confidence & evidence gaps']) || 'Not available from retrieved evidence.';
-  const occurrences = (result.occurrences ?? []).slice(0, 20);
+  const occurrences = (result.occurrences ?? []).slice(0, 20).map((o) => ({
+    ...o,
+    duration: o.duration && o.duration !== '-' && o.duration !== '—'
+      ? o.duration
+      : observedDuration(o.start, o.end) || 'Not available'
+  }));
 
   const totalPages = 7;
   const pages: string[] = [];
@@ -253,18 +258,18 @@ export function buildCioRcaPdf(result: CioRcaResult): Blob {
     const rootAssessmentClean = rootAssessment
       .replace(/\s*\(ID:\s*[^)]+\)/gi, '')
       .replace(/\s*\[?(?:SERVICE|PROCESS_GROUP|HOST)-[A-Z0-9_-]+\]?/g, '');
-    wrap(rootAssessmentClean, 92).slice(0, 8).forEach((line, i) => pdfText(c, 48, y - i * 13, line, 8.5));
-    y -= Math.min(120, Math.max(50, wrap(rootAssessment, 92).length * 13 + 20));
+    wrap(rootAssessmentClean, 92).slice(0, 6).forEach((line, i) => pdfText(c, 48, y - i * 13, line, 8.5));
+    y -= Math.min(105, Math.max(48, wrap(rootAssessmentClean, 92).length * 13 + 18));
 
-    y = drawSectionTitle(c, 48, y, 'Technical root-cause chain', 'Observed chain only; inferred triggers remain explicitly marked');
-    pdfRect(c, 48, y - 18, 491, 92, '0.96 0.98 0.99');
-    pdfRect(c, 62, y + 35, 10, 10, '0.16 0.65 0.43');
-    pdfText(c, 82, y + 34, root, 10, true);
-    pdfText(c, 82, y + 16, 'Root-cause entity identified by the native Dynatrace Problems API.', 7.8, false, '0.42 0.48 0.56');
-    pdfText(c, 62, y - 4, 'Supporting evidence', 7, true, '0.18 0.39 0.78');
-    pdfText(c, 160, y - 4, String(result.evidenceSummary.correlatedEvents) + ' correlated Davis events; ' + String(result.evidenceSummary.timelineSnapshots) + ' timeline snapshots.', 7.8);
-    pdfText(c, 62, y - 23, 'Causal-chain boundary', 7, true, '0.70 0.42 0.08');
-    pdfText(c, 160, y - 23, 'No additional service-to-service relationship is asserted without explicit telemetry evidence.', 7.8);
+    y = drawSectionTitle(c, 48, y, 'Evidence-backed root-cause view');
+    pdfRect(c, 48, y - 28, 491, 116, '0.96 0.98 0.99');
+    pdfText(c, 62, y + 62, 'ROOT CAUSE', 7, true, '0.18 0.39 0.78');
+    pdfText(c, 62, y + 42, root, 15, true);
+    pdfText(c, 62, y + 23, 'Authoritative entity exposed by the native Dynatrace Problems API.', 8, false, '0.42 0.48 0.56');
+    pdfText(c, 62, y + 2, 'Evidence basis', 7, true, '0.18 0.39 0.78');
+    pdfText(c, 150, y + 2, String(result.evidenceSummary.correlatedEvents) + ' Davis events | ' + String(result.evidenceSummary.timelineSnapshots) + ' timeline snapshots | ' + String(result.evidenceSummary.incidentLogs) + ' logs', 7.8);
+    pdfText(c, 62, y - 17, 'What is not proven', 7, true, '0.70 0.42 0.08');
+    pdfText(c, 150, y - 17, 'Specific exception, deployment, resource or dependency trigger is not asserted without telemetry.', 7.8);
 
     pdfRect(c, 48, 105, 491, 92, '0.97 0.96 0.91');
     pdfText(c, 62, 178, 'PROVEN VS. REQUIRES VALIDATION', 7, true, '0.70 0.42 0.08');
