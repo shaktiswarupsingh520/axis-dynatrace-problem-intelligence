@@ -15,3 +15,6 @@
 .rca-email-error{margin:5px 0 12px;padding:10px 12px;border:1px solid #edc5c1;background:#fff5f4;border-radius:7px;color:#9b3027;font-size:11px}
 .rca-email-success{margin:5px 0 12px;padding:10px 12px;border:1px solid #bfe1d2;background:#f1faf5;border-radius:7px;color:#15734f;font-size:11px}
 .rca-email-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+
+.rca-email-modal .rca-email-form{overflow:auto;min-height:0}
+.rca-email-modal .rca-email-actions{position:sticky;bottom:0;background:#fff;padding:12px 0 2px;margin-top:10px;border-top:1px solid #e2e9ef;z-index:2}
