@@ -17,7 +17,7 @@ async function loadManagementZones(): Promise<Array<{ id: string; name: string }
     const zones: Array<{ id: string; name: string }> = [];
     let response = await settingsObjectsClient.getSettingsObjects({
       schemaIds: 'builtin:management-zones',
-      scope: 'environment',
+      scopes: 'environment',
       fields: 'objectId,value',
       pageSize: 500,
     });
