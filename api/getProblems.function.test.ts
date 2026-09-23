@@ -71,4 +71,35 @@ describe('getProblems.function', () => {
       managementZones: [],
     });
   });
+  it('filters by management zone name and returns the full management zone list', async () => {
+    mockedGetProblems.mockResolvedValue({
+      problems: [],
+      totalCount: 0,
+      pageSize: 100,
+    } as never);
+    mockedGetSettingsObjects.mockResolvedValue({
+      items: [
+        { objectId: 'mz-1', value: { name: 'CardsBPM_1281' } },
+        { objectId: 'mz-2', value: { name: 'InvestigationCaseManager_704' } },
+      ],
+    } as never);
+
+    const result = await getProblemsFunction({
+      managementZoneName: 'CardsBPM_1281',
+    });
+
+    expect(mockedGetProblems).toHaveBeenCalledWith({
+      from: 'now-24h',
+      to: 'now',
+      problemSelector: 'managementZones("CardsBPM_1281")',
+      pageSize: 100,
+      sort: '-startTime',
+    });
+    expect(result.managementZones).toEqual([
+      { id: 'CardsBPM_1281', name: 'CardsBPM_1281' },
+      { id: 'InvestigationCaseManager_704', name: 'InvestigationCaseManager_704' },
+    ]);
+  });
+
+
 });
