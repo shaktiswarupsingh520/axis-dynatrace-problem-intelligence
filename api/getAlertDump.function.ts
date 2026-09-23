@@ -1,4 +1,5 @@
 import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+import { settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 
 type Row = Record<string, unknown>;
 interface Payload { from?: string; status?: string; severity?: string; managementZoneId?: string; limit?: number; }
@@ -33,11 +34,32 @@ function buildQuery(range: string, status: string, severity: string, zone: strin
 
 async function loadZones(): Promise<Zone[]> {
   try {
-    const rows = await dql(`fetch dt.entity.host\n| expand managementZones\n| filter isNotNull(managementZones)\n| dedup managementZones\n| sort managementZones asc\n| limit 500`, 500);
-    return rows.map((row) => { const name = text(row.managementZones); return name ? { id: name, name } : undefined; }).filter((x): x is Zone => Boolean(x));
-  } catch { return []; }
+    const zones: Zone[] = [];
+    let response = await settingsObjectsClient.getSettingsObjects({
+      schemaIds: 'builtin:management-zones',
+      scopes: 'environment',
+      fields: 'objectId,value',
+      pageSize: 500,
+    });
+    const collect = (items: unknown) => {
+      if (!Array.isArray(items)) return;
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        const record = item as { objectId?: string; value?: { name?: unknown } };
+        const name = typeof record.value?.name === 'string' ? record.value.name.trim() : '';
+        if (name) zones.push({ id: name, name });
+      }
+    };
+    collect(response.items);
+    for (let page = 0; response.nextPageKey && page < 10; page += 1) {
+      response = await settingsObjectsClient.getSettingsObjects({ nextPageKey: response.nextPageKey });
+      collect(response.items);
+    }
+    return [...new Map(zones.map((zone) => [zone.name, zone])).values()].sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
 }
-
 function transform(row: Row): Row {
   return { display_id: text(row.display_id), 'event.name': text(row['event.name']), 'event.status': text(row['event.status']), 'event.severity': text(row['event.severity']), 'event.category': text(row['event.category']), 'dt.davis.impact_level': text(row['dt.davis.impact_level']), 'event.start': text(row['event.start']), 'event.end': text(row['event.end']), 'problem.duration': text(row['problem.duration']), affected_entity_names: text(row.affected_entity_names), affected_entity_ids: text(row.affected_entity_ids), root_cause_entity_id: text(row.root_cause_entity_id), 'event.description': text(row['event.description']) };
 }
