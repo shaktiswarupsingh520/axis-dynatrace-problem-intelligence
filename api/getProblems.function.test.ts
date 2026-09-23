@@ -1,17 +1,18 @@
-import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
+import { problemsClient, settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 import getProblemsFunction from './getProblems.function';
 
 jest.mock('@dynatrace-sdk/client-classic-environment-v2', () => ({
-  problemsClient: {
-    getProblems: jest.fn(),
-  },
+  problemsClient: { getProblems: jest.fn() },
+  settingsObjectsClient: { getSettingsObjects: jest.fn() },
 }));
 
 describe('getProblems.function', () => {
   const mockedGetProblems = jest.mocked(problemsClient.getProblems);
+  const mockedGetSettingsObjects = jest.mocked(settingsObjectsClient.getSettingsObjects);
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedGetSettingsObjects.mockResolvedValue({ items: [] } as never);
   });
 
   it('should fetch problems newest first using the default timeframe', async () => {
@@ -34,6 +35,7 @@ describe('getProblems.function', () => {
     expect(result.totalCount).toBe(1);
     expect(result.pageSize).toBe(100);
     expect(result.warnings).toEqual([]);
+    expect(result.managementZones).toEqual([]);
   });
 
   it('should combine a custom selector with a management zone selector', async () => {
@@ -66,6 +68,7 @@ describe('getProblems.function', () => {
       nextPageKey: 'next-page',
       pageSize: 50,
       warnings: ['test warning'],
+      managementZones: [],
     });
   });
 });
