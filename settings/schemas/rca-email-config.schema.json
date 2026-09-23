@@ -1,0 +1,21 @@
+{
+  "$schema": "https://developer.dynatrace.com/docs-assets/schema_strict_apps.json",
+  "dynatrace": "1",
+  "schemaId": "rca-email-config",
+  "version": "1.0.1",
+  "displayName": "RCA email workflow configuration",
+  "description": "Configures the live Dynatrace workflow used by the Incident Root Cause Analysis Email RCA action.",
+  "multiObject": false,
+  "ordered": false,
+  "maturity": "GENERAL_AVAILABILITY",
+  "ownerBasedAccessControl": false,
+  "properties": {
+    "workflowId": {
+      "displayName": "RCA email workflow ID",
+      "description": "UUID of the live Dynatrace Workflow that contains the Send email action. Expected workflow inputs: to, cc, subject, message.",
+      "type": "text",
+      "default": "",
+      "nullable": false
+    }
+  }
+}
