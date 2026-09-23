@@ -10,6 +10,8 @@ type Payload = {
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const WORKFLOW_SCHEMA_ID = 'rca-email-config';
+// Current live Axis RCA email workflow. App Settings can override this later if needed.
+const DEFAULT_WORKFLOW_ID = '47401efc-c932-42bc-91dc-384645f1d2bc';
 
 const normalizeRecipients = (values: unknown): string[] => {
   if (!Array.isArray(values)) return [];
@@ -46,12 +48,12 @@ export default async function (payload: Payload = {}) {
     ? (settings.items[0].value as Record<string, unknown>).workflowId
     : undefined;
 
-  if (typeof workflowId !== 'string' || !/^[0-9a-f-]{36}$/i.test(workflowId.trim())) {
-    throw new Error('RCA email workflow is not configured. Set the live workflow UUID in the RCA email workflow app setting.');
-  }
+  const effectiveWorkflowId = typeof workflowId === 'string' && /^[0-9a-f-]{36}$/i.test(workflowId.trim())
+    ? workflowId.trim()
+    : DEFAULT_WORKFLOW_ID;
 
   const execution = await workflowsClient.runWorkflow({
-    id: workflowId.trim(),
+    id: effectiveWorkflowId,
     body: {
       input: { to, cc, subject, message },
       params: {},
@@ -61,7 +63,7 @@ export default async function (payload: Payload = {}) {
 
   return {
     accepted: true,
-    workflowId: workflowId.trim(),
+    workflowId: effectiveWorkflowId,
     executionId: execution.id ?? null,
     status: execution.state ?? 'ACCEPTED',
   };
