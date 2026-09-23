@@ -7,6 +7,22 @@ interface Response { rows: Row[]; count: number; managementZones: Zone[]; availa
 const text = (value: unknown): string => { if (value == null) return ''; if (typeof value === 'string') return value; if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value); if (Array.isArray(value)) return value.map(text).filter(Boolean).join('; '); return JSON.stringify(value) ?? ''; };
 const download = (content: string, type: string, name: string) => { const url = URL.createObjectURL(new Blob([content], { type })); const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; document.body.appendChild(anchor); anchor.click(); anchor.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000); };
 const csvCell = (value: unknown) => `"${text(value).replace(/"/g, '""')}"`;
+const formatExportTimestamp = (value: unknown): string => {
+  if (value == null || value === '') return '';
+  const numeric = typeof value === 'number'
+    ? value
+    : (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value) ? Number(value) : NaN);
+  const date = Number.isFinite(numeric)
+    ? new Date(numeric > 1e12 ? numeric : numeric * 1000)
+    : new Date(String(value).replace(/^"|"$/g, ''));
+  return Number.isNaN(date.getTime())
+    ? text(value)
+    : date.toLocaleString('en-IN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+    });
+};
+
 const buttonStyle: React.CSSProperties = { height: 36, padding: '0 13px', border: '1px solid #b8c7d8', borderRadius: 7, background: '#ffffff', color: '#172334', fontWeight: 700, cursor: 'pointer' };
 const selectStyle: React.CSSProperties = { height: 36, minWidth: 145, border: '1px solid #aebed0', borderRadius: 7, background: '#ffffff', color: '#172334', padding: '0 9px', fontSize: 12 };
 
@@ -29,7 +45,27 @@ export const AlertDump = () => {
   useEffect(() => { const handleOutside = (event: MouseEvent) => { if (zonePickerRef.current && !zonePickerRef.current.contains(event.target as Node)) setZoneOpen(false); }; document.addEventListener('mousedown', handleOutside); return () => document.removeEventListener('mousedown', handleOutside); }, []);
   const rows = useMemo(() => data?.rows ?? [], [data]); const zones = data?.managementZones ?? []; const filteredZones = useMemo(() => { const query = zoneSearch.trim().toLowerCase(); return query ? zones.filter((zone) => zone.name.toLowerCase().includes(query)) : zones; }, [zones, zoneSearch]);
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize)); const currentPage = Math.min(page, pageCount); const visible = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const exportCsv = () => { const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Root Cause Entity','Description']; const keys = ['display_id','event.name','event.status','event.severity','event.category','dt.davis.impact_level','event.start','event.end','problem.duration','affected_entity_names','root_cause_entity_id','event.description']; const content = '\uFEFF' + [columns.map(csvCell).join(','), ...rows.map((row) => keys.map((key) => csvCell(row[key])).join(','))].join('\r\n'); download(content, 'text/csv;charset=utf-8', 'dynatrace-alert-dump.csv'); };
+  const exportCsv = () => {
+    const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Root Cause Entity','Description'];
+    const content = '\uFEFF' + [
+      columns.map(csvCell).join(','),
+      ...rows.map((row) => [
+        row.display_id,
+        row['event.name'],
+        row['event.status'],
+        row['event.severity'],
+        row['event.category'],
+        row['dt.davis.impact_level'],
+        formatExportTimestamp(row['event.start']),
+        formatExportTimestamp(row['event.end']),
+        row['problem.duration'],
+        row.affected_entity_names,
+        row.root_cause_entity_name,
+        row['event.description'],
+      ].map(csvCell).join(','))
+    ].join('\r\n');
+    download(content, 'text/csv;charset=utf-8', 'dynatrace-alert-dump.csv');
+  };
   const apply = (kind: 'range' | 'status' | 'severity' | 'zone', value: string) => { const next = { range, status, severity, zoneId, [kind]: value }; if (kind === 'range') setRange(value); if (kind === 'status') setStatus(value); if (kind === 'severity') setSeverity(value); if (kind === 'zone') setZoneId(value); void load(next.range, next.status, next.severity, next.zoneId); };
   const th: React.CSSProperties = { position: 'sticky', top: 0, zIndex: 2, background: '#eaf1f7', color: '#172334', borderBottom: '1px solid #cbd7e3', padding: '10px 9px', textAlign: 'left', whiteSpace: 'nowrap' };
   const td: React.CSSProperties = { color: '#24364a', borderBottom: '1px solid #e3e9ef', padding: '9px', verticalAlign: 'top', lineHeight: 1.35 };
