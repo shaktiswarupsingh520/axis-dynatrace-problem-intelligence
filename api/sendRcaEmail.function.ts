@@ -10,7 +10,7 @@ type Payload = {
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Current live Axis RCA email workflow.
-const WORKFLOW_ID = '47401efc-c932-42bc-91dc-384645f1d2bc';
+const WORKFLOW_ID = '476401cf-c932-42bc-91dc-380465f1d2bc';
 
 const normalizeRecipients = (values: unknown): string[] => {
   if (!Array.isArray(values)) return [];
