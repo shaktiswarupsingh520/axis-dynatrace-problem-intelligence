@@ -27,7 +27,7 @@ describe('sendRcaEmail.function', () => {
     });
 
     expect(runWorkflow).toHaveBeenCalledWith({
-      id: '47401efc-c932-42bc-91dc-384645f1d2bc',
+      id: '476401cf-c932-42bc-91dc-380465f1d2bc',
       body: {
         input: {
           to: ['owner@axisbank.com'],
@@ -54,7 +54,7 @@ describe('sendRcaEmail.function', () => {
 
     expect(result).toEqual({
       accepted: false,
-      workflowId: '47401efc-c932-42bc-91dc-384645f1d2bc',
+      workflowId: '476401cf-c932-42bc-91dc-380465f1d2bc',
       error: 'Forbidden: workflow access denied',
     });
   });
