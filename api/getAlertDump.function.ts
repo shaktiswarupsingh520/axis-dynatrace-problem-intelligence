@@ -29,7 +29,7 @@ function buildQuery(range: string, status: string, severity: string, zone: strin
   if (zone) {
     query += `\n| expand related_entity_names\n| lookup sourceField:related_entity_names, lookupField:entity.name, [\n  fetch dt.entity.host\n  | expand managementZones\n  | filter managementZones == "${esc(zone)}"\n  | fields entity.name\n], fields:{zoneHostName=entity.name}\n| filter isNotNull(zoneHostName)\n| dedup display_id`;
   }
-  return `${query}\n| fieldsAdd problem_duration_calc = coalesce(event.end, now()) - event.start\n| sort event.start desc\n| limit 1000`;
+  return `${query}\n| fieldsAdd problem_duration_minutes = (unixNanosFromTimestamp(coalesce(event.end, now())) - unixNanosFromTimestamp(event.start)) / 60000000000\n| sort event.start desc\n| limit 1000`;
 }
 
 async function loadZones(): Promise<Zone[]> {
@@ -70,7 +70,7 @@ function transform(row: Row): Row {
     'dt.davis.impact_level': text(row['dt.davis.impact_level']),
     'event.start': text(row['event.start']),
     'event.end': text(row['event.end']),
-    'problem.duration': text(row.problem_duration_calc),
+    'problem.duration': typeof row.problem_duration_minutes === 'number' && Number.isFinite(row.problem_duration_minutes) ? `${Math.max(0, row.problem_duration_minutes).toFixed(1)} min` : '—',
     affected_entity_names: text(row.affected_entity_names),
     affected_entity_ids: text(row.affected_entity_ids),
     root_cause_entity_id: text(row.root_cause_entity_id),
