@@ -32,27 +32,49 @@ const confidence = (analysis: string): string => { const match = analysis.match(
 const splitRecipients = (value: string): string[] => [...new Set(value.split(/[;,\n]+/).map((item) => item.trim()).filter(Boolean))];
 const buildEmailMessage = (result: Result, sections: Array<{ title: string; body: string }>): string => {
   const facts = result.problemFacts;
-  const lines: string[] = [
-    'AXIS BANK - DYNATRACE INCIDENT RCA',
+  const executive = sections.find((item) => item.title.toLowerCase().includes('executive summary'))?.body
+    || 'Executive summary not available.';
+  const rootAssessment = sections.find((item) => item.title.toLowerCase().includes('root cause assessment'))?.body
+    || 'Root-cause assessment not available.';
+  const impact = sections.find((item) => item.title.toLowerCase().includes('impact assessment'))?.body
+    || 'Impact assessment not available.';
+  const remediation = sections.find((item) => item.title.toLowerCase().includes('immediate remediation plan'))?.body
+    || 'Immediate remediation plan not available.';
+  const assist = result.assistAnalysis?.trim() || 'No AI-assisted analysis was returned for this RCA.';
+  const rcaUrl = 'https://axis-prod.apps.dynatrace.com/ui/apps/my.axis.problem.intelligence/rca?problemId='
+    + encodeURIComponent(result.problemId);
+  return [
+    '**AXIS BANK | DYNATRACE INCIDENT RCA**',
     '',
-    `Problem ID: ${result.problemId}`,
-    `Alert: ${facts?.title || 'Dynatrace Problem'}`,
-    `Status: ${facts?.status || 'Not available'}`,
-    `Severity: ${facts?.severity || 'Not available'}`,
-    `Duration: ${durationText(facts?.start, facts?.end, facts?.duration)}`,
-    `Management Zone: ${(result.managementZones ?? []).join(', ') || 'Not derived'}`,
+    `**Problem:** ${result.problemId}  `,
+    `**Alert:** ${facts?.title || 'Dynatrace Problem'}  `,
+    `**Status:** ${facts?.status || 'Not available'} | **Severity:** ${facts?.severity || 'Not available'}  `,
+    `**Duration:** ${durationText(facts?.start, facts?.end, facts?.duration)}  `,
+    `**Management Zone:** ${(result.managementZones ?? []).join(', ') || 'Not derived'}`,
     '',
-    'ROOT CAUSE',
+    '**EXECUTIVE FINDING**',
+    executive,
+    '',
+    '**ROOT CAUSE**',
     result.nativeRootCauseEntity || 'Not identified by Davis',
+    rootAssessment,
     '',
-  ];
-  for (const section of sections) {
-    lines.push(section.title.toUpperCase(), section.body, '');
-  }
-  lines.push('RECURRENCE', `${result.occurrenceCount} matching occurrences in the last 30 days.`, '');
-  lines.push('AI ASSISTED ANALYSIS', result.assistAnalysis?.trim() || 'No AI-assisted analysis was returned for this RCA.', '');
-  lines.push('Generated from the Dynatrace evidence-backed RCA workspace.');
-  return lines.join('\\n');
+    '**IMPACT**',
+    impact,
+    '',
+    '**IMMEDIATE REMEDIATION**',
+    remediation,
+    '',
+    '**RECURRENCE**',
+    `${result.occurrenceCount} matching occurrences in the last 30 days.`,
+    '',
+    '**AI-ASSISTED ANALYSIS**',
+    assist,
+    '',
+    `[Open full RCA and download the CIO-ready PDF](${rcaUrl})`,
+    '',
+    'Generated from the Dynatrace evidence-backed RCA workspace.'
+  ].join('\n');
 };
 const downloadExcel = (result: Result): void => {
   const cell = (value: unknown): string => '"' + asText(value).replace(/"/g, '""') + '"';
