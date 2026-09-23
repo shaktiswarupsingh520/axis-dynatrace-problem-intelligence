@@ -1,4 +1,3 @@
-import { appSettingsObjectsClient } from '@dynatrace-sdk/client-app-settings-v2';
 import { workflowsClient } from '@dynatrace-sdk/client-automation';
 
 type Payload = {
@@ -9,9 +8,9 @@ type Payload = {
 };
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const WORKFLOW_SCHEMA_ID = 'rca-email-config';
-// Current live Axis RCA email workflow. App Settings can override this later if needed.
-const DEFAULT_WORKFLOW_ID = '47401efc-c932-42bc-91dc-384645f1d2bc';
+
+// Current live Axis RCA email workflow.
+const WORKFLOW_ID = '47401efc-c932-42bc-91dc-384645f1d2bc';
 
 const normalizeRecipients = (values: unknown): string[] => {
   if (!Array.isArray(values)) return [];
@@ -28,6 +27,17 @@ const validateRecipients = (field: string, recipients: string[]): void => {
   if (invalid.length) throw new Error(`Invalid ${field} email address: ${invalid[0]}`);
 };
 
+const errorText = (cause: unknown): string => {
+  if (cause instanceof Error && cause.message) return cause.message;
+  if (cause && typeof cause === 'object') {
+    const value = cause as Record<string, unknown>;
+    const nested = value.message ?? value.error ?? value.details ?? value.response ?? value.body;
+    if (typeof nested === 'string') return nested;
+    try { return JSON.stringify(nested ?? value); } catch { return 'Unknown workflow execution error'; }
+  }
+  return String(cause ?? 'Unknown workflow execution error');
+};
+
 export default async function (payload: Payload = {}) {
   const to = normalizeRecipients(payload.to);
   const cc = normalizeRecipients(payload.cc);
@@ -41,30 +51,27 @@ export default async function (payload: Payload = {}) {
   if (!message.trim()) throw new Error('Email message is required.');
   if (message.length > 256 * 1024) throw new Error('Email message exceeds the Dynatrace email action limit of 256 KiB.');
 
-  const settings = await appSettingsObjectsClient.getEffectiveAppSettingsValues({
-    schemaId: WORKFLOW_SCHEMA_ID,
-  });
-  const workflowId = settings.items?.[0]?.value && typeof settings.items[0].value === 'object'
-    ? (settings.items[0].value as Record<string, unknown>).workflowId
-    : undefined;
+  try {
+    const execution = await workflowsClient.runWorkflow({
+      id: WORKFLOW_ID,
+      body: {
+        input: { to, cc, subject, message },
+        params: {},
+      },
+      monitor: false,
+    });
 
-  const effectiveWorkflowId = typeof workflowId === 'string' && /^[0-9a-f-]{36}$/i.test(workflowId.trim())
-    ? workflowId.trim()
-    : DEFAULT_WORKFLOW_ID;
-
-  const execution = await workflowsClient.runWorkflow({
-    id: effectiveWorkflowId,
-    body: {
-      input: { to, cc, subject, message },
-      params: {},
-    },
-    monitor: false,
-  });
-
-  return {
-    accepted: true,
-    workflowId: effectiveWorkflowId,
-    executionId: execution.id ?? null,
-    status: execution.state ?? 'ACCEPTED',
-  };
+    return {
+      accepted: true,
+      workflowId: WORKFLOW_ID,
+      executionId: execution.id ?? null,
+      status: execution.state ?? 'ACCEPTED',
+    };
+  } catch (cause: unknown) {
+    return {
+      accepted: false,
+      workflowId: WORKFLOW_ID,
+      error: errorText(cause),
+    };
+  }
 };
