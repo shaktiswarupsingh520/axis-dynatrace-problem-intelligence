@@ -3,13 +3,14 @@
   "environmentUrl": "https://axis-prod.apps.dynatrace.com/",
   "app": {
     "name": "Axis Problem Intelligence",
-    "version": "0.0.82",
+    "version": "0.0.83",
     "description": "Axis Bank Dynatrace Problem Intelligence and SRE Operations application",
     "id": "my.axis.problem.intelligence",
     "scopes": [
       { "name": "environment-api:problems:read", "comment": "Read Dynatrace problems" },
       { "name": "storage:buckets:read", "comment": "Read Grail buckets for problem intelligence scoping" },
       { "name": "storage:entities:read", "comment": "Read entity and management-zone membership for alert dump scoping" },
+      { "name": "settings:objects:read", "comment": "Read management zone definitions for complete filtering" },
       { "name": "storage:events:read", "comment": "Read Davis events for incident intelligence" },
       { "name": "storage:logs:read", "comment": "Read incident logs for RCA evidence" },
       { "name": "davis:analyzers:read", "comment": "Read Dynatrace Intelligence analyzer definitions" },
