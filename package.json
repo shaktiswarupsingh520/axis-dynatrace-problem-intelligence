@@ -38,7 +38,7 @@
     "react-is": "^18.3.1",
     "react-router-dom": "^6.30.4",
     "@dynatrace-sdk/client-automation": "^8.5.0",
-    "@dynatrace-sdk/client-app-settings-v2": "^1.2.1"
+    "@dynatrace-sdk/client-app-settings-v2": "^1.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
