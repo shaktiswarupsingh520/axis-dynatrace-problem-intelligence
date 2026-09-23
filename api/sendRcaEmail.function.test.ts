@@ -1,12 +1,5 @@
-import { appSettingsObjectsClient } from '@dynatrace-sdk/client-app-settings-v2';
 import { workflowsClient } from '@dynatrace-sdk/client-automation';
 import sendRcaEmail from './sendRcaEmail.function';
-
-jest.mock('@dynatrace-sdk/client-app-settings-v2', () => ({
-  appSettingsObjectsClient: {
-    getEffectiveAppSettingsValues: jest.fn(),
-  },
-}));
 
 jest.mock('@dynatrace-sdk/client-automation', () => ({
   workflowsClient: {
@@ -15,14 +8,10 @@ jest.mock('@dynatrace-sdk/client-automation', () => ({
 }));
 
 describe('sendRcaEmail.function', () => {
-  const getSettings = jest.mocked(appSettingsObjectsClient.getEffectiveAppSettingsValues);
   const runWorkflow = jest.mocked(workflowsClient.runWorkflow);
 
   beforeEach(() => {
     jest.clearAllMocks();
-    getSettings.mockResolvedValue({
-      items: [{ value: { workflowId: '123e4567-e89b-12d3-a456-426614174000' } }],
-    } as never);
     runWorkflow.mockResolvedValue({
       id: 'execution-123',
       state: 'RUNNING',
@@ -37,9 +26,8 @@ describe('sendRcaEmail.function', () => {
       message: 'RCA body',
     });
 
-    expect(getSettings).toHaveBeenCalledWith({ schemaId: 'rca-email-config' });
     expect(runWorkflow).toHaveBeenCalledWith({
-      id: '123e4567-e89b-12d3-a456-426614174000',
+      id: '47401efc-c932-42bc-91dc-384645f1d2bc',
       body: {
         input: {
           to: ['owner@axisbank.com'],
@@ -53,6 +41,22 @@ describe('sendRcaEmail.function', () => {
     });
     expect(result.accepted).toBe(true);
     expect(result.executionId).toBe('execution-123');
+  });
+
+  it('returns the workflow error instead of crashing the function', async () => {
+    runWorkflow.mockRejectedValue(new Error('Forbidden: workflow access denied'));
+
+    const result = await sendRcaEmail({
+      to: ['owner@axisbank.com'],
+      subject: 'Dynatrace RCA | P-123',
+      message: 'RCA body',
+    });
+
+    expect(result).toEqual({
+      accepted: false,
+      workflowId: '47401efc-c932-42bc-91dc-384645f1d2bc',
+      error: 'Forbidden: workflow access denied',
+    });
   });
 
   it('rejects invalid recipients', async () => {
