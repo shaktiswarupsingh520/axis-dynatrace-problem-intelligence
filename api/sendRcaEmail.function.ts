@@ -52,6 +52,8 @@ export default async function (payload: Payload = {}) {
   if (message.length > 256 * 1024) throw new Error('Email message exceeds the Dynatrace email action limit of 256 KiB.');
 
   try {
+    await workflowsClient.getWorkflow({ id: WORKFLOW_ID });
+
     const execution = await workflowsClient.runWorkflow({
       id: WORKFLOW_ID,
       body: {
