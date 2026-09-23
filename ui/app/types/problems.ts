@@ -88,6 +88,7 @@ export interface Problem {
 
 export interface ProblemsResponse {
   problems: Problem[];
+  managementZones?: ManagementZone[];
   totalCount?: number;
   nextPageKey?: string;
   pageSize?: number;
