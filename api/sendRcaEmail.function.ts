@@ -63,6 +63,6 @@ export default async function (payload: Payload = {}) {
     accepted: true,
     workflowId: workflowId.trim(),
     executionId: execution.id ?? null,
-    status: execution.state ?? execution.status ?? 'ACCEPTED',
+    status: execution.state ?? 'ACCEPTED',
   };
 };
