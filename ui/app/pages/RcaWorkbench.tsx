@@ -154,7 +154,12 @@ export function RcaWorkbench(): React.JSX.Element {
       const message = buildEmailMessage(data, sections);
       const response = await fetch('/api/sendRcaEmail', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ to, cc, subject: emailSubject, message }) });
       const body = await response.text();
+      let parsed: unknown = null;
+      try { parsed = body ? JSON.parse(body) : null; } catch { /* keep raw response */ }
       if (!response.ok) throw new Error(body || `Email RCA failed with HTTP ${response.status}`);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && (parsed as JsonObject).accepted === false) {
+        throw new Error(asText((parsed as JsonObject).error) || 'Dynatrace workflow rejected the RCA email request.');
+      }
       setEmailSuccess('RCA email accepted by Dynatrace workflow.');
     } catch (cause: unknown) {
       setEmailError(cause instanceof Error ? cause.message : 'Unable to send RCA email.');
