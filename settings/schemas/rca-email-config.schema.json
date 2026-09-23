@@ -6,7 +6,6 @@
   "displayName": "RCA email workflow configuration",
   "description": "Configures the live Dynatrace workflow used by the Incident Root Cause Analysis Email RCA action.",
   "multiObject": false,
-  "maxObjects": 1,
   "summaryPattern": "RCA email workflow {workflowId}",
   "ordered": false,
   "maturity": "GENERAL_AVAILABILITY",
