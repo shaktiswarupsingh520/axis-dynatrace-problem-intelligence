@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 type Row = Record<string, unknown>;
@@ -12,8 +12,8 @@ const selectStyle: React.CSSProperties = { height: 36, minWidth: 145, border: '1
 
 export const AlertDump = () => {
   const navigate = useNavigate();
-  const [range, setRange] = useState('24h'); const [status, setStatus] = useState('ALL'); const [severity, setSeverity] = useState('ALL'); const [zoneId, setZoneId] = useState('ALL'); const [page, setPage] = useState(1); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [data, setData] = useState<Response | null>(null);
-  const pageSize = 50;
+  const [range, setRange] = useState('24h'); const [status, setStatus] = useState('ALL'); const [severity, setSeverity] = useState('ALL'); const [zoneId, setZoneId] = useState('ALL'); const [zoneSearch, setZoneSearch] = useState(''); const [zoneOpen, setZoneOpen] = useState(false); const [page, setPage] = useState(1); const [loading, setLoading] = useState(true); const [error, setError] = useState(''); const [data, setData] = useState<Response | null>(null);
+  const pageSize = 50; const zonePickerRef = useRef<HTMLDivElement>(null);
   const load = useCallback(async (nextRange = range, nextStatus = status, nextSeverity = severity, nextZone = zoneId) => {
     setLoading(true); setError('');
     try {
@@ -26,7 +26,8 @@ export const AlertDump = () => {
     finally { setLoading(false); }
   }, [range, status, severity, zoneId]);
   useEffect(() => { void load(); }, [load]);
-  const rows = useMemo(() => data?.rows ?? [], [data]); const zones = data?.managementZones ?? [];
+  useEffect(() => { const handleOutside = (event: MouseEvent) => { if (zonePickerRef.current && !zonePickerRef.current.contains(event.target as Node)) setZoneOpen(false); }; document.addEventListener('mousedown', handleOutside); return () => document.removeEventListener('mousedown', handleOutside); }, []);
+  const rows = useMemo(() => data?.rows ?? [], [data]); const zones = data?.managementZones ?? []; const filteredZones = useMemo(() => { const query = zoneSearch.trim().toLowerCase(); return query ? zones.filter((zone) => zone.name.toLowerCase().includes(query)) : zones; }, [zones, zoneSearch]);
   const pageCount = Math.max(1, Math.ceil(rows.length / pageSize)); const currentPage = Math.min(page, pageCount); const visible = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
   const exportCsv = () => { const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Root Cause Entity','Description']; const keys = ['display_id','event.name','event.status','event.severity','event.category','dt.davis.impact_level','event.start','event.end','problem.duration','affected_entity_names','root_cause_entity_id','event.description']; const content = '\uFEFF' + [columns.map(csvCell).join(','), ...rows.map((row) => keys.map((key) => csvCell(row[key])).join(','))].join('\r\n'); download(content, 'text/csv;charset=utf-8', 'dynatrace-alert-dump.csv'); };
   const apply = (kind: 'range' | 'status' | 'severity' | 'zone', value: string) => { const next = { range, status, severity, zoneId, [kind]: value }; if (kind === 'range') setRange(value); if (kind === 'status') setStatus(value); if (kind === 'severity') setSeverity(value); if (kind === 'zone') setZoneId(value); void load(next.range, next.status, next.severity, next.zoneId); };
@@ -39,7 +40,21 @@ export const AlertDump = () => {
         <label style={{ color: '#33485f', fontSize: 11, fontWeight: 800 }}>TIME RANGE<select style={selectStyle} value={range} onChange={(e) => apply('range', e.target.value)}><option value="1h">Last 1 hour</option><option value="6h">Last 6 hours</option><option value="24h">Last 24 hours</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select></label>
         <label style={{ color: '#33485f', fontSize: 11, fontWeight: 800 }}>STATUS<select style={selectStyle} value={status} onChange={(e) => apply('status', e.target.value)}><option value="ALL">All</option><option value="ACTIVE">Active / Open</option><option value="CLOSED">Closed / Resolved</option></select></label>
         <label style={{ color: '#33485f', fontSize: 11, fontWeight: 800 }}>SEVERITY<select style={selectStyle} value={severity} onChange={(e) => apply('severity', e.target.value)}><option value="ALL">All severities</option>{(data?.availableSeverities ?? ['1','2','3','4','5']).map((item) => <option key={item} value={item}>Severity {item}</option>)}</select></label>
-        <label style={{ color: '#33485f', fontSize: 11, fontWeight: 800 }}>MANAGEMENT ZONE<select style={{ ...selectStyle, minWidth: 190 }} value={zoneId} onChange={(e) => apply('zone', e.target.value)}><option value="ALL">All Management Zones</option>{zones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</select></label>
+        <div ref={zonePickerRef} style={{ position: 'relative', minWidth: 280 }}>
+          <label style={{ color: '#33485f', fontSize: 11, fontWeight: 800, display: 'block', marginBottom: 5 }}>MANAGEMENT ZONE</label>
+          <button type="button" aria-haspopup="listbox" aria-expanded={zoneOpen} onClick={() => { setZoneOpen((open) => !open); setZoneSearch(''); }} style={{ ...selectStyle, minWidth: 280, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', textAlign: 'left' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{zoneId === 'ALL' ? 'All Management Zones' : zoneId}</span><span aria-hidden="true">⌄</span>
+          </button>
+          {zoneOpen && <div role="listbox" aria-label="Management Zone options" style={{ position: 'absolute', zIndex: 20, top: '100%', left: 0, width: '100%', marginTop: 4, padding: 8, background: '#ffffff', border: '1px solid #aebed0', borderRadius: 8, boxShadow: '0 12px 30px rgba(20,45,75,.16)' }}>
+            <input autoFocus value={zoneSearch} onChange={(e) => setZoneSearch(e.target.value)} onClick={(e) => e.stopPropagation()} placeholder="Search management zones…" autoComplete="off" style={{ width: '100%', boxSizing: 'border-box', height: 34, border: '1px solid #c9d6e1', borderRadius: 6, padding: '0 10px', color: '#172334', marginBottom: 7 }} />
+            <div style={{ maxHeight: 280, overflow: 'auto', borderTop: '1px solid #eef2f5' }}>
+              <button type="button" role="option" aria-selected={zoneId === 'ALL'} onClick={() => { setZoneOpen(false); setZoneSearch(''); apply('zone', 'ALL'); }} style={{ display: 'block', width: '100%', border: 0, background: zoneId === 'ALL' ? '#f1f6fa' : '#ffffff', color: '#24364a', textAlign: 'left', padding: '8px 9px', fontSize: 11, cursor: 'pointer', borderRadius: 5 }}>All Management Zones</button>
+              {filteredZones.map((zone) => <button type="button" role="option" aria-selected={zoneId === zone.id} key={zone.id} onClick={() => { setZoneOpen(false); setZoneSearch(''); apply('zone', zone.id); }} style={{ display: 'block', width: '100%', border: 0, background: zoneId === zone.id ? '#f1f6fa' : '#ffffff', color: '#24364a', textAlign: 'left', padding: '8px 9px', fontSize: 11, cursor: 'pointer', borderRadius: 5 }}>{zone.name}</button>)}
+              {!filteredZones.length && <div style={{ padding: 12, color: '#8293a3', fontSize: 10 }}>No matching Management Zone found.</div>}
+            </div>
+            <div style={{ marginTop: 5, color: '#8293a3', fontSize: 9 }}>{zoneSearch ? String(filteredZones.length) + (filteredZones.length === 1 ? ' match' : ' matches') : String(zones.length) + ' zones available'}</div>
+          </div>}
+        </div>
         <button type="button" style={{ ...buttonStyle, background: '#174a7e', color: '#ffffff', borderColor: '#174a7e' }} onClick={() => void load()} disabled={loading}>{loading ? 'Loading…' : 'Load problems'}</button>
         <button type="button" style={buttonStyle} onClick={exportCsv} disabled={!rows.length}>Download CSV</button>
         <button type="button" style={buttonStyle} onClick={() => navigate('/')}>Back to Problems</button>
