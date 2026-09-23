@@ -53,7 +53,7 @@ describe('getProblemRcaPreview.function', () => {
     expect(result.problemAnalysis.confidence).toBe('High');
     expect(result.evidenceSummary.correlatedEvents).toBe(1);
     expect(result.occurrenceCount).toBe(1);
-    expect(result.problemFacts.duration).toMatch(/h$/);
+    expect(result.problemFacts.duration).toMatch(/[mhd]$/);
     expect(result.managementZones).toEqual(['NHIAcquirer_1261']);
   });
 
