@@ -29,3 +29,18 @@
 .aop-review-next ol{margin:7px 0 0;padding-left:18px}
 .aop-review-next li{margin-bottom:5px}
 @media(max-width:700px){.aop-review-grid{grid-template-columns:1fr 1fr}}
+
+.aop-service-list{display:flex;flex-direction:column;gap:4px;min-width:190px}
+.aop-service-list-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:10px;color:#35516a}
+.aop-service-list-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:155px}
+.aop-service-list-row strong{font-size:10px;color:#173f67;flex:0 0 auto}
+.aop-service-list>small{font-size:9px;color:#8293a3}
+.aop-list-services{color:#526b80!important;white-space:normal}
+.aop-review-section{margin-top:18px}
+.aop-review-section-title{font-size:10px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#173b63;margin-bottom:8px}
+.aop-service-table{border:1px solid #d9e1ea;border-radius:8px;overflow:hidden}
+.aop-service-table-header,.aop-service-table-row{display:grid;grid-template-columns:minmax(0,1fr) 140px 90px;align-items:center;gap:12px;padding:10px 12px}
+.aop-service-table-header{background:#f4f7fa;color:#526273;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.06em}
+.aop-service-table-row{border-top:1px solid #e5eaf0;font-size:11px;color:#26384a}
+.aop-service-table-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:700px){.aop-service-table-header,.aop-service-table-row{grid-template-columns:minmax(0,1fr) 100px 65px}.aop-service-list{min-width:145px}}
