@@ -39,7 +39,7 @@ export type OptimizationReportInput = {
 };
 
 const esc = (value: string): string =>
-  value.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/\r?\n/g, ' ');
+  value.replace(/[^\\x20-\\x7E]/g, ' ').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/\r?\n/g, ' ');
 
 const wrap = (value: string, max = 92): string[] => {
   const words = value.trim().split(/\s+/);
