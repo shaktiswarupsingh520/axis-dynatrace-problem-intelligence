@@ -8,5 +8,6 @@ export const Header = () => <AppHeader>
     <AppHeader.NavigationItem as={Link} to="/">Problem Intelligence</AppHeader.NavigationItem>
     <AppHeader.NavigationItem as={Link} to="/alert-dump">Alert Dump</AppHeader.NavigationItem>
     <AppHeader.NavigationItem as={Link} to="/rca">RCA with Davis</AppHeader.NavigationItem>
+    <AppHeader.NavigationItem as={Link} to="/alert-optimization">Alert Optimization</AppHeader.NavigationItem>
   </AppHeader.Navigation>
 </AppHeader>;
