@@ -30,11 +30,12 @@ const text = (v: unknown): string => {
   return '';
 };
 
-const safe = (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\"');
+const safe = (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 const duration = (s?: number, e?: number) => {
   if (!Number.isFinite(s)) return 0;
+  const start = Number(s);
   const end = e !== undefined && e >= 0 ? e : Date.now();
-  return Math.max(0, (end - (s as number)) / 60000);
+  return Math.max(0, (end - start) / 60000);
 };
 
 async function loadZones(): Promise<Zone[]> {
@@ -79,7 +80,7 @@ async function loadProblems(zoneName: string): Promise<{ rows: ProblemRow[]; pag
     to: 'now',
     pageSize: 500,
     sort: '-startTime',
-    problemSelector: `managementZones("\${safe(zoneName)}")`,
+    problemSelector: `managementZones("${safe(zoneName)}")`,
   });
 
   rows.push(...((response.problems ?? []) as unknown as ProblemRow[]));
