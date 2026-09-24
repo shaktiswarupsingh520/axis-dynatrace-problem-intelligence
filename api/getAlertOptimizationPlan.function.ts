@@ -114,6 +114,8 @@ const extract = (v: unknown): string => {
 
 export default async function (payload: Payload) {
   const zone = text(payload?.managementZoneName).trim();
+  const lookback = payload?.lookback === '1d' || payload?.lookback === '7d' || payload?.lookback === '30d' ? payload.lookback : '30d';
+  const windowLabel = lookback === '1d' ? 'Last 1 day' : lookback === '7d' ? 'Last 7 days' : 'Last 30 days';
   const zones = await loadZones();
 
   if (zone === '__LOAD_ZONES_ONLY__') {
@@ -141,9 +143,6 @@ export default async function (payload: Payload) {
   }
 
   if (!zone) throw new Error('Select a Management Zone before generating the Alert Optimization Plan.');
-
-  const lookback = payload?.lookback === '1d' || payload?.lookback === '7d' || payload?.lookback === '30d' ? payload.lookback : '30d';
-  const windowLabel = lookback === '1d' ? 'Last 1 day' : lookback === '7d' ? 'Last 7 days' : 'Last 30 days';
 
   const problemLoad = await loadProblems(zone, lookback);
   const problems = problemLoad.rows;
