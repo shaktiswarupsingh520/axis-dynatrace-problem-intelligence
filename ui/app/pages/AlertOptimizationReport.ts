@@ -39,7 +39,7 @@ export type OptimizationReportInput = {
 };
 
 const esc = (value: string): string =>
-  value.replace(/[^\\x20-\\x7E]/g, ' ').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/\r?\n/g, ' ');
+  value.replace(/[^\x20-\x7E]/g, ' ').replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)').replace(/\r?\n/g, ' ');
 
 const wrap = (value: string, max = 92): string[] => {
   const words = value.trim().split(/\s+/);
@@ -195,5 +195,5 @@ export const buildAlertOptimizationEmail = (report: OptimizationReportInput): st
   const actions = report.immediateActions.slice(0, 10)
     .map((p, i) => (i + 1) + '. ' + p.title + ' - ' + (p.openCount ? 'open now' : 'review') + ', severity ' + p.severity + ', root cause: ' + p.rootCauseEntity).join('\n');
 
-  return 'AXIS BANK - DYNATRACE OPERATIONS\nALERT OPTIMIZATION PLAN\nManagement Zone: ' + report.managementZone + '\nLookback: ' + report.window + '\nGenerated: ' + new Date(report.generatedAt).toLocaleString('en-IN') + '\n\nSUMMARY\nProblems: ' + report.totals.problems + '\nUnique patterns: ' + report.totals.uniquePatterns + '\nRecurring patterns: ' + report.totals.recurringPatterns + '\nOpen now: ' + report.totals.openProblems + '\nThreshold review candidates: ' + report.totals.thresholdReviewCandidates + '\nImmediate action candidates: ' + report.totals.immediateActionCandidates + '\n\nREPEATED / NOISY PATTERNS\n' + (recurring || 'None detected.') + '\n\nTHRESHOLD / SENSITIVITY REVIEW\n' + (threshold || 'None detected.') + '\n\nIMMEDIATE ACTION QUEUE\n' + (actions || 'None detected.') + '\n\nDYNATRACE ASSIST\n' + (report.assistAnalysis || report.assistStatus) + '\n\nNote: recommendations are review proposals and require owner validation before production changes.';
+  return 'Alert Optimization Plan: ' + report.managementZone + ' Management Zone\n\nSUMMARY\nProblems: ' + report.totals.problems + '\nUnique patterns: ' + report.totals.uniquePatterns + '\nRecurring patterns: ' + report.totals.recurringPatterns + '\nOpen now: ' + report.totals.openProblems + '\nThreshold review candidates: ' + report.totals.thresholdReviewCandidates + '\nImmediate action candidates: ' + report.totals.immediateActionCandidates + '\n\nREPEATED / NOISY PATTERNS\n' + (recurring || 'None detected.') + '\n\nTHRESHOLD / SENSITIVITY REVIEW\n' + (threshold || 'None detected.') + '\n\nIMMEDIATE ACTION QUEUE\n' + (actions || 'None detected.') + '\n\nDYNATRACE ASSIST RECOMMENDATIONS\n' + (report.assistAnalysis || report.assistStatus) + '\n\nNote: recommendations are review proposals and require owner validation before production changes.';
 };
