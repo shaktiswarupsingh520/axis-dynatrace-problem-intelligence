@@ -45,8 +45,10 @@ const extract=(v:unknown):string=>{
 
 export default async function(payload:Payload){
  const zone=text(payload?.managementZoneName).trim();
+ const zones=await loadZones();
+ if(zone==='__LOAD_ZONES_ONLY__')return {managementZone:'',generatedAt:new Date().toISOString(),window:'Last 30 days',totals:{problems:0,uniquePatterns:0,recurringPatterns:0,openProblems:0,thresholdReviewCandidates:0,immediateActionCandidates:0},severityCounts:{},patterns:[],thresholdCandidates:[],immediateActions:[],assistAnalysis:'',assistStatus:'Zone list only',availableManagementZones:zones,methodology:[]};
  if(!zone)throw new Error('Select a Management Zone before generating the Alert Optimization Plan.');
- const [problems,zones]=await Promise.all([loadProblems(zone),loadZones()]);
+ const problems=await loadProblems(zone);
 
  type Pattern={key:string;title:string;rootCauseEntity:string;severity:string;impact:string;occurrences:number;openCount:number;closedCount:number;avgDurationMinutes:number;maxDurationMinutes:number;firstSeen:number;lastSeen:number;problemIds:string[]};
  const groups=new Map<string,Pattern>();
