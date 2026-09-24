@@ -104,7 +104,7 @@ export const AlertOptimizationPlan = () => {
         body: JSON.stringify({
           to: emailTo.split(/[;,\s]+/).map(v => v.trim()).filter(Boolean),
           cc: emailCc.split(/[;,\s]+/).map(v => v.trim()).filter(Boolean),
-          subject: 'Dynatrace Alert Optimization | ' + plan.managementZone + ' | ' + plan.window,
+          subject: 'Alert Optimization Plan: ' + plan.managementZone + ' Management Zone',
           message: buildAlertOptimizationEmail(plan as OptimizationReportInput),
         }),
       });
