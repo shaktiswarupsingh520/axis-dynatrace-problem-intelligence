@@ -4,6 +4,14 @@ import { problemsClient, settingsObjectsClient } from '@dynatrace-sdk/client-cla
 type Row = Record<string, unknown>;
 type Payload = { managementZoneName: string; lookback?: '1d' | '7d' | '30d' };
 type Zone = { id: string; name: string };
+type ProblemEntity = {
+  name?: string;
+  entityId?: {
+    id?: string;
+    type?: string;
+  };
+  type?: string;
+};
 type ProblemRow = {
   problemId?: string;
   displayId?: string;
@@ -13,7 +21,9 @@ type ProblemRow = {
   impactLevel?: string;
   startTime?: number;
   endTime?: number;
-  rootCauseEntity?: { name?: string };
+  rootCauseEntity?: ProblemEntity;
+  impactedEntities?: ProblemEntity[];
+  affectedEntities?: ProblemEntity[];
   managementZones?: Array<{ id?: string; name?: string }>;
 };
 
@@ -161,6 +171,7 @@ export default async function (payload: Payload) {
     firstSeen: number;
     lastSeen: number;
     problemIds: string[];
+    serviceImpacts: Map<string, number>;
   };
 
   const groups = new Map<string, Pattern>();
@@ -175,6 +186,19 @@ export default async function (payload: Payload) {
     const d = duration(p.startTime, p.endTime);
     const existing = groups.get(key);
 
+    const impactedServices = [
+      ...(Array.isArray(p.impactedEntities) ? p.impactedEntities : []),
+      ...(Array.isArray(p.affectedEntities) ? p.affectedEntities : []),
+    ]
+      .filter(entity => {
+        const entityType = text(entity?.entityId?.type || entity?.type).toUpperCase();
+        return entityType === 'SERVICE';
+      })
+      .map(entity => text(entity?.name).trim())
+      .filter(Boolean);
+
+    const uniqueImpactedServices = [...new Set(impactedServices)];
+
     if (existing) {
       existing.occurrences++;
       if (text(p.status).toUpperCase() === 'OPEN') existing.openCount++;
@@ -183,11 +207,19 @@ export default async function (payload: Payload) {
       existing.maxDurationMinutes = Math.max(existing.maxDurationMinutes, d);
       existing.firstSeen = existing.firstSeen ? Math.min(existing.firstSeen, start) : start;
       existing.lastSeen = Math.max(existing.lastSeen, start);
+
+      for (const serviceName of uniqueImpactedServices) {
+        existing.serviceImpacts.set(
+          serviceName,
+          (existing.serviceImpacts.get(serviceName) ?? 0) + 1,
+        );
+      }
+
       if (existing.problemIds.length < 8) {
         existing.problemIds.push(text(p.displayId) || text(p.problemId));
       }
     } else {
-      groups.set(key, {
+      const newPattern: Pattern = {
         key,
         title,
         rootCauseEntity: root,
@@ -201,15 +233,36 @@ export default async function (payload: Payload) {
         firstSeen: start,
         lastSeen: start,
         problemIds: [text(p.displayId) || text(p.problemId)],
-      });
+        serviceImpacts: new Map<string, number>(),
+      };
+
+      for (const serviceName of uniqueImpactedServices) {
+        newPattern.serviceImpacts.set(serviceName, 1);
+      }
+
+      groups.set(key, newPattern);
     }
   }
 
   const patterns = [...groups.values()]
     .map(p => ({
-      ...p,
+      key: p.key,
+      title: p.title,
+      rootCauseEntity: p.rootCauseEntity,
+      severity: p.severity,
+      impact: p.impact,
+      occurrences: p.occurrences,
+      openCount: p.openCount,
+      closedCount: p.closedCount,
       avgDurationMinutes: Number((p.avgDurationMinutes / Math.max(p.occurrences, 1)).toFixed(1)),
+      maxDurationMinutes: p.maxDurationMinutes,
+      firstSeen: p.firstSeen,
+      lastSeen: p.lastSeen,
+      problemIds: p.problemIds,
       recurrenceRatePerWeek: Number((p.occurrences / 4.2857).toFixed(1)),
+      impactedServices: [...p.serviceImpacts.entries()]
+        .map(([serviceName, occurrences]) => ({ serviceName, occurrences }))
+        .sort((a, b) => b.occurrences - a.occurrences),
     }))
     .sort((a, b) => b.occurrences - a.occurrences || b.openCount - a.openCount);
 
@@ -286,7 +339,7 @@ Rules:
           { type: 'supplementary', value: context },
           {
             type: 'instruction',
-            value: 'Use only the supplied ${windowLabel.toLowerCase()} Dynatrace problem evidence and clearly label recommendations as proposed actions.',
+            value: `Use only the supplied ${windowLabel.toLowerCase()} Dynatrace problem evidence and clearly label recommendations as proposed actions.`,
           },
         ],
         annotations: {
@@ -330,6 +383,7 @@ Rules:
     availableManagementZones: zones,
     methodology: [
       'Recurring pattern = same problem title + root-cause entity + impact level occurring at least twice in the selected lookback window.',
+      'Impacted services = Dynatrace SERVICE entities present in impacted/affected entities for each Problem; service occurrence count is the number of Problems in which that service appears for the pattern.',
       'Threshold/sensitivity review candidate = 5+ occurrences, average duration <=15 minutes, and no currently open occurrence. This is a review signal, not an automatic configuration change.',
       'Immediate-action candidate = currently open, severe problem category, or average duration >=60 minutes.',
       'Problem history is paginated until the API is exhausted, with a 20-page safety cap (up to 10,000 problems at 500 per page). Data coverage is reported so truncated analysis is never presented as complete.',
