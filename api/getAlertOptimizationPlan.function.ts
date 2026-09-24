@@ -69,24 +69,33 @@ async function loadZones(): Promise<Zone[]> {
   }
 }
 
-async function loadProblems(zoneName: string): Promise<ProblemRow[]> {
+async function loadProblems(zoneName: string): Promise<{ rows: ProblemRow[]; pageCount: number; truncated: boolean }> {
   const rows: ProblemRow[] = [];
+  const maxPages = 20;
+  let pageCount = 0;
+
   let response = await problemsClient.getProblems({
     from: 'now-30d',
     to: 'now',
     pageSize: 500,
     sort: '-startTime',
-    problemSelector: `managementZones("${safe(zoneName)}")`,
+    problemSelector: `managementZones("\${safe(zoneName)}")`,
   });
 
   rows.push(...((response.problems ?? []) as unknown as ProblemRow[]));
+  pageCount = 1;
 
-  for (let page = 0; response.nextPageKey && page < 4; page++) {
+  while (response.nextPageKey && pageCount < maxPages) {
     response = await problemsClient.getProblems({ nextPageKey: response.nextPageKey });
     rows.push(...((response.problems ?? []) as unknown as ProblemRow[]));
+    pageCount++;
   }
 
-  return rows;
+  return {
+    rows,
+    pageCount,
+    truncated: Boolean(response.nextPageKey),
+  };
 }
 
 const extract = (v: unknown): string => {
@@ -132,7 +141,8 @@ export default async function (payload: Payload) {
 
   if (!zone) throw new Error('Select a Management Zone before generating the Alert Optimization Plan.');
 
-  const problems = await loadProblems(zone);
+  const problemLoad = await loadProblems(zone);
+  const problems = problemLoad.rows;
 
   type Pattern = {
     key: string;
@@ -221,6 +231,12 @@ export default async function (payload: Payload) {
   const context = JSON.stringify({
     managementZone: zone,
     window: 'last 30 days',
+    dataCoverage: {
+      analyzedProblems: problems.length,
+      pageCount: problemLoad.pageCount,
+      dataComplete: !problemLoad.truncated,
+      truncated: problemLoad.truncated,
+    },
     totals: {
       problems: problems.length,
       uniquePatterns: patterns.length,
@@ -287,6 +303,13 @@ Rules:
     managementZone: zone,
     generatedAt: new Date().toISOString(),
     window: 'Last 30 days',
+    dataCoverage: {
+      analyzedProblems: problems.length,
+      pageCount: problemLoad.pageCount,
+      dataComplete: !problemLoad.truncated,
+      truncated: problemLoad.truncated,
+      maxPages: 20,
+    },
     totals: {
       problems: problems.length,
       uniquePatterns: patterns.length,
@@ -306,6 +329,7 @@ Rules:
       'Recurring pattern = same problem title + root-cause entity + impact level occurring at least twice in the 30-day window.',
       'Threshold/sensitivity review candidate = 5+ occurrences, average duration <=15 minutes, and no currently open occurrence. This is a review signal, not an automatic configuration change.',
       'Immediate-action candidate = currently open, severe problem category, or average duration >=60 minutes.',
+      'Problem history is paginated until the API is exhausted, with a 20-page safety cap (up to 10,000 problems at 500 per page). Data coverage is reported so truncated analysis is never presented as complete.',
       'Exact threshold values are not inferred because historical problem records do not expose the current anomaly-detection configuration.',
     ],
   };
