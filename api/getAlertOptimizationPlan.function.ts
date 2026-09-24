@@ -305,7 +305,7 @@ Rules:
   return {
     managementZone: zone,
     generatedAt: new Date().toISOString(),
-    window: 'Last 30 days',
+    window: windowLabel,
     dataCoverage: {
       analyzedProblems: problems.length,
       pageCount: problemLoad.pageCount,
