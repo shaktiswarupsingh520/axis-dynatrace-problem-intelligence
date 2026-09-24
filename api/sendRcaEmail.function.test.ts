@@ -3,15 +3,18 @@ import sendRcaEmail from './sendRcaEmail.function';
 
 jest.mock('@dynatrace-sdk/client-automation', () => ({
   workflowsClient: {
+    getWorkflow: jest.fn(),
     runWorkflow: jest.fn(),
   },
 }));
 
 describe('sendRcaEmail.function', () => {
+  const getWorkflow = jest.mocked(workflowsClient.getWorkflow);
   const runWorkflow = jest.mocked(workflowsClient.runWorkflow);
 
   beforeEach(() => {
     jest.clearAllMocks();
+    getWorkflow.mockResolvedValue({} as never);
     runWorkflow.mockResolvedValue({
       id: 'execution-123',
       state: 'RUNNING',
