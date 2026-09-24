@@ -13,6 +13,10 @@ type Pattern = {
   openCount: number;
   avgDurationMinutes: number;
   recurrenceRatePerWeek: number;
+  maxDurationMinutes?: number;
+  firstSeen?: number;
+  lastSeen?: number;
+  problemIds?: string[];
 };
 type Plan = {
   managementZone: string;
@@ -45,6 +49,7 @@ export const AlertOptimizationPlan = () => {
   const [emailCc, setEmailCc] = useState('');
   const [emailSending, setEmailSending] = useState(false);
   const [emailStatus, setEmailStatus] = useState('');
+  const [selectedThresholdCandidate, setSelectedThresholdCandidate] = useState<Pattern | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -180,6 +185,39 @@ export const AlertOptimizationPlan = () => {
           </section>
           {emailStatus && <div className="aop-email-status">{emailStatus}</div>}
 
+          {selectedThresholdCandidate && <div className="aop-email-overlay" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setSelectedThresholdCandidate(null); }}>
+            <section className="aop-review-modal" role="dialog" aria-modal="true" aria-label="Threshold sensitivity review">
+              <div className="aop-section-head"><div><div className="aop-kicker">THRESHOLD / SENSITIVITY REVIEW</div><h2>Candidate detail</h2></div><button type="button" className="aop-modal-close" onClick={() => setSelectedThresholdCandidate(null)}>×</button></div>
+              <div className="aop-review-body">
+                <h3>{selectedThresholdCandidate.title}</h3>
+                <p className="aop-review-subtitle">{selectedThresholdCandidate.rootCauseEntity}</p>
+                <div className="aop-review-grid">
+                  <div><span>Occurrences</span><strong>{selectedThresholdCandidate.occurrences}</strong></div>
+                  <div><span>Open occurrences</span><strong>{selectedThresholdCandidate.openCount}</strong></div>
+                  <div><span>Average duration</span><strong>{mins(selectedThresholdCandidate.avgDurationMinutes)}</strong></div>
+                  <div><span>Maximum duration</span><strong>{mins(selectedThresholdCandidate.maxDurationMinutes ?? selectedThresholdCandidate.avgDurationMinutes)}</strong></div>
+                  <div><span>Severity</span><strong>{selectedThresholdCandidate.severity}</strong></div>
+                  <div><span>Impact</span><strong>{selectedThresholdCandidate.impact}</strong></div>
+                  <div><span>Recurrence rate</span><strong>{selectedThresholdCandidate.recurrenceRatePerWeek}/week</strong></div>
+                  <div><span>Sample problem IDs</span><strong>{selectedThresholdCandidate.problemIds?.join(', ') || 'Not available'}</strong></div>
+                </div>
+                <div className="aop-review-callout">
+                  <strong>Why this is a review candidate</strong>
+                  <p>This pattern occurred at least 5 times, averaged 15 minutes or less, and has no currently open occurrence in the selected lookback. That indicates a possible noise/sensitivity opportunity, but it does <b>not</b> reveal the current Dynatrace threshold.</p>
+                </div>
+                <div className="aop-review-next">
+                  <strong>Validation before changing the alert</strong>
+                  <ol>
+                    <li>Open the current anomaly-detection / alerting configuration for the affected entity.</li>
+                    <li>Compare the configured threshold or sensitivity with the observed recurrence and duration above.</li>
+                    <li>Confirm business impact with the application owner before changing, suppressing or routing the alert.</li>
+                    <li>Measure alert volume and operational impact after any approved change.</li>
+                  </ol>
+                </div>
+              </div>
+            </section>
+          </div>}
+
           {emailOpen && <div className="aop-email-overlay" role="presentation" onMouseDown={e => { if (e.target === e.currentTarget) setEmailOpen(false); }}>
             <section className="aop-email-modal" role="dialog" aria-modal="true" aria-label="Email optimization report">
               <div className="aop-section-head"><div><div className="aop-kicker">DISTRIBUTE REPORT</div><h2>Email optimization report</h2></div><button type="button" className="aop-modal-close" onClick={() => setEmailOpen(false)}>×</button></div>
@@ -207,7 +245,7 @@ export const AlertOptimizationPlan = () => {
             <article className="aop-card">
               <div className="aop-section-head"><div><div className="aop-kicker">THRESHOLD / SENSITIVITY</div><h2>Review candidates</h2></div><span>{plan.thresholdCandidates.length} candidates</span></div>
               <div className="aop-card-note">Review candidates only. Exact threshold values are not inferred from problem history.</div>
-              <div className="aop-list">{plan.thresholdCandidates.slice(0, 12).map(p => <div className="aop-list-row" key={p.key}><div><b>{p.title}</b><small>{p.rootCauseEntity} · {p.occurrences} occurrences · avg {mins(p.avgDurationMinutes)}</small></div><span>Review</span></div>)}{!plan.thresholdCandidates.length && <div className="aop-empty">No strong threshold-review pattern detected.</div>}</div>
+              <div className="aop-list">{plan.thresholdCandidates.slice(0, 12).map(p => <button type="button" className="aop-list-row aop-review-row" key={p.key} onClick={() => setSelectedThresholdCandidate(p)}><div><b>{p.title}</b><small>{p.rootCauseEntity} · {p.occurrences} occurrences · avg {mins(p.avgDurationMinutes)}</small></div><span>Review</span></button>)}{!plan.thresholdCandidates.length && <div className="aop-empty">No strong threshold-review pattern detected.</div>}</div>
             </article>
           </section>
 
