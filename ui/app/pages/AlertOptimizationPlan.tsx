@@ -63,6 +63,24 @@ export const AlertOptimizationPlan = () => {
     return q ? zones.filter(z => z.name.toLowerCase().includes(q)) : zones;
   }, [zones, search]);
 
+  const serviceTotals = useMemo(() => {
+    if (!plan) return [];
+    const totals = new Map<string, { occurrences: number; patterns: number }>();
+    for (const pattern of plan.patterns) {
+      for (const service of pattern.impactedServices ?? []) {
+        const current = totals.get(service.serviceName) ?? { occurrences: 0, patterns: 0 };
+        current.occurrences += service.occurrences;
+        current.patterns += 1;
+        totals.set(service.serviceName, current);
+      }
+    }
+    return [...totals.entries()]
+      .map(([serviceName, value]) => ({ serviceName, ...value }))
+      .filter(service => service.occurrences >= 2)
+      .sort((a, b) => b.occurrences - a.occurrences || b.patterns - a.patterns)
+      .slice(0, 10);
+  }, [plan]);
+
   const loadZones = async () => {
     try {
       const r = await fetch('/api/getAlertOptimizationPlan', {
@@ -182,6 +200,30 @@ export const AlertOptimizationPlan = () => {
             <div className="aop-coverage-icon">{plan.dataCoverage.truncated ? '!' : '✓'}</div>
             <div><strong>{plan.dataCoverage.truncated ? 'Analysis reached the data safety limit' : 'Complete problem dataset analyzed'}</strong><p>{plan.dataCoverage.analyzedProblems.toLocaleString()} problems analyzed across {plan.dataCoverage.pageCount} API page{plan.dataCoverage.pageCount === 1 ? '' : 's'}.{plan.dataCoverage.truncated ? ' Additional problems may exist beyond the safety cap.' : ' No additional Problems API pages were returned.'}</p></div>
           </section>
+
+          {serviceTotals.length > 0 && (
+            <section className="aop-card aop-service-overview">
+              <div className="aop-section-head">
+                <div>
+                  <div className="aop-kicker">SERVICE IMPACT</div>
+                  <h2>Top alert-generating services</h2>
+                </div>
+                <span>Multiple alerts in selected window</span>
+              </div>
+              <div className="aop-service-overview-grid">
+                {serviceTotals.map(service => (
+                  <div key={service.serviceName} className="aop-service-overview-item">
+                    <div>
+                      <strong title={service.serviceName}>{service.serviceName}</strong>
+                      <small>{service.patterns} recurring pattern{service.patterns === 1 ? '' : 's'}</small>
+                    </div>
+                    <b>{service.occurrences.toLocaleString()}</b>
+                    <span>alerts</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="aop-report-actions">
             <div><strong>Report actions</strong><span>Export or distribute the generated optimization plan for the selected window.</span></div>
