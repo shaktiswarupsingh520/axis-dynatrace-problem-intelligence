@@ -35,7 +35,11 @@ const errorText = (cause: unknown): string => {
     if (typeof nested === 'string') return nested;
     try { return JSON.stringify(nested ?? value); } catch { return 'Unknown workflow execution error'; }
   }
-  return String(cause ?? 'Unknown workflow execution error');
+  if (typeof cause === 'string') return cause;
+  if (typeof cause === 'number' || typeof cause === 'boolean' || typeof cause === 'bigint') {
+    return String(cause);
+  }
+  return 'Unknown workflow execution error';
 };
 
 export default async function (payload: Payload = {}) {
