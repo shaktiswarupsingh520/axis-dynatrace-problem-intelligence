@@ -44,3 +44,14 @@
 .aop-service-table-row{border-top:1px solid #e5eaf0;font-size:11px;color:#26384a}
 .aop-service-table-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 @media(max-width:700px){.aop-service-table-header,.aop-service-table-row{grid-template-columns:minmax(0,1fr) 100px 65px}.aop-service-list{min-width:145px}}
+
+.aop-service-overview{margin-top:12px}
+.aop-service-overview-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:12px 16px}
+.aop-service-overview-item{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:8px;align-items:end;padding:11px 12px;background:#f7fafc;border:1px solid #e1e8ee;border-radius:8px}
+.aop-service-overview-item div{min-width:0}
+.aop-service-overview-item strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#173b5b;font-size:11px}
+.aop-service-overview-item small{display:block;margin-top:4px;color:#8293a3;font-size:9px}
+.aop-service-overview-item>b{font-size:17px;color:#173f67}
+.aop-service-overview-item>span{grid-column:2;color:#8293a3;font-size:8px;text-transform:uppercase;letter-spacing:.05em}
+@media(max-width:1100px){.aop-service-overview-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:700px){.aop-service-overview-grid{grid-template-columns:1fr 1fr}}
