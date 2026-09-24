@@ -2,7 +2,7 @@ import { publicClient } from '@dynatrace-sdk/client-davis-copilot';
 import { problemsClient, settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 
 type Row = Record<string, unknown>;
-type Payload = { managementZoneName: string };
+type Payload = { managementZoneName: string; lookback?: '1d' | '7d' | '30d' };
 type Zone = { id: string; name: string };
 type ProblemRow = {
   problemId?: string;
@@ -70,13 +70,13 @@ async function loadZones(): Promise<Zone[]> {
   }
 }
 
-async function loadProblems(zoneName: string): Promise<{ rows: ProblemRow[]; pageCount: number; truncated: boolean }> {
+async function loadProblems(zoneName: string, lookback: '1d' | '7d' | '30d'): Promise<{ rows: ProblemRow[]; pageCount: number; truncated: boolean }> {
   const rows: ProblemRow[] = [];
   const maxPages = 20;
   let pageCount = 0;
 
   let response = await problemsClient.getProblems({
-    from: 'now-30d',
+    from: `now-${lookback}`,
     to: 'now',
     pageSize: 500,
     sort: '-startTime',
@@ -120,7 +120,7 @@ export default async function (payload: Payload) {
     return {
       managementZone: '',
       generatedAt: new Date().toISOString(),
-      window: 'Last 30 days',
+      window: windowLabel,
       totals: {
         problems: 0,
         uniquePatterns: 0,
@@ -142,7 +142,10 @@ export default async function (payload: Payload) {
 
   if (!zone) throw new Error('Select a Management Zone before generating the Alert Optimization Plan.');
 
-  const problemLoad = await loadProblems(zone);
+  const lookback = payload?.lookback === '1d' || payload?.lookback === '7d' || payload?.lookback === '30d' ? payload.lookback : '30d';
+  const windowLabel = lookback === '1d' ? 'Last 1 day' : lookback === '7d' ? 'Last 7 days' : 'Last 30 days';
+
+  const problemLoad = await loadProblems(zone, lookback);
   const problems = problemLoad.rows;
 
   type Pattern = {
@@ -231,7 +234,7 @@ export default async function (payload: Payload) {
 
   const context = JSON.stringify({
     managementZone: zone,
-    window: 'last 30 days',
+    window: windowLabel.toLowerCase(),
     dataCoverage: {
       analyzedProblems: problems.length,
       pageCount: problemLoad.pageCount,
@@ -256,7 +259,7 @@ export default async function (payload: Payload) {
   let assistStatus = 'Not available';
 
   try {
-    const prompt = `Create an evidence-based Alert Optimization Plan for Dynatrace Management Zone: ${zone}. Analyze ONLY the supplied last-30-days problem-pattern data.
+    const prompt = `Create an evidence-based Alert Optimization Plan for Dynatrace Management Zone: ${zone}. Analyze ONLY the supplied ${windowLabel.toLowerCase()} problem-pattern data.
 
 Return exactly these sections:
 1. Executive Optimization Summary
@@ -284,7 +287,7 @@ Rules:
           { type: 'supplementary', value: context },
           {
             type: 'instruction',
-            value: 'Use only the supplied 30-day Dynatrace problem evidence and clearly label recommendations as proposed actions.',
+            value: 'Use only the supplied ${windowLabel.toLowerCase()} Dynatrace problem evidence and clearly label recommendations as proposed actions.',
           },
         ],
         annotations: {
@@ -327,7 +330,7 @@ Rules:
     assistStatus,
     availableManagementZones: zones,
     methodology: [
-      'Recurring pattern = same problem title + root-cause entity + impact level occurring at least twice in the 30-day window.',
+      'Recurring pattern = same problem title + root-cause entity + impact level occurring at least twice in the selected lookback window.',
       'Threshold/sensitivity review candidate = 5+ occurrences, average duration <=15 minutes, and no currently open occurrence. This is a review signal, not an automatic configuration change.',
       'Immediate-action candidate = currently open, severe problem category, or average duration >=60 minutes.',
       'Problem history is paginated until the API is exhausted, with a 20-page safety cap (up to 10,000 problems at 500 per page). Data coverage is reported so truncated analysis is never presented as complete.',
