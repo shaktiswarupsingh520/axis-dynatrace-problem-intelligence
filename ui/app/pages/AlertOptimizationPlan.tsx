@@ -17,6 +17,13 @@ type Plan = {
   managementZone: string;
   generatedAt: string;
   window: string;
+  dataCoverage: {
+    analyzedProblems: number;
+    pageCount: number;
+    dataComplete: boolean;
+    truncated: boolean;
+    maxPages?: number;
+  };
   totals: {
     problems: number;
     uniquePatterns: number;
@@ -180,6 +187,23 @@ export const AlertOptimizationPlan = () => {
               <div><span>UNIQUE PATTERNS</span><strong>{plan.totals.uniquePatterns.toLocaleString()}</strong><small>title + root cause + impact</small></div>
               <div><span>RECURRING PATTERNS</span><strong>{plan.totals.recurringPatterns.toLocaleString()}</strong><small>2+ occurrences</small></div>
               <div><span>OPEN NOW</span><strong>{plan.totals.openProblems.toLocaleString()}</strong><small>currently active</small></div>
+            </section>
+
+            <section className={`aop-coverage ${plan.dataCoverage.truncated ? 'is-warning' : 'is-complete'}`}>
+              <div className="aop-coverage-icon">{plan.dataCoverage.truncated ? '!' : '✓'}</div>
+              <div>
+                <strong>
+                  {plan.dataCoverage.truncated
+                    ? 'Analysis reached the 30-day data safety limit'
+                    : 'Complete 30-day problem dataset analyzed'}
+                </strong>
+                <p>
+                  {plan.dataCoverage.analyzedProblems.toLocaleString()} problems analyzed across {plan.dataCoverage.pageCount} API page{plan.dataCoverage.pageCount === 1 ? '' : 's'}.
+                  {plan.dataCoverage.truncated
+                    ? ` Additional problems may exist beyond the configured ${plan.dataCoverage.maxPages ?? 20}-page safety cap.`
+                    : ' No additional Problems API pages were returned.'}
+                </p>
+              </div>
             </section>
 
             <section className="aop-assist">
