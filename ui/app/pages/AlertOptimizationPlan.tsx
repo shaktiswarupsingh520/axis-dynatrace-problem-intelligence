@@ -3,6 +3,7 @@ import './AlertOptimizationPlan.css';
 import { buildAlertOptimizationEmail, downloadAlertOptimizationPdf, type OptimizationReportInput } from './AlertOptimizationReport';
 
 type Zone = { id: string; name: string };
+type ServiceImpact = { serviceName: string; occurrences: number };
 type Pattern = {
   key: string;
   title: string;
@@ -17,6 +18,7 @@ type Pattern = {
   firstSeen?: number;
   lastSeen?: number;
   problemIds?: string[];
+  impactedServices?: ServiceImpact[];
 };
 type Plan = {
   managementZone: string;
@@ -34,6 +36,11 @@ type Plan = {
 };
 
 const mins = (n: number) => n < 60 ? n.toFixed(0) + 'm' : Math.floor(n / 60) + 'h ' + Math.round(n % 60) + 'm';
+
+const serviceSummary = (services?: ServiceImpact[], limit = 3) => {
+  const visible = (services ?? []).slice(0, limit);
+  return visible.length ? visible.map(s => s.serviceName + ' (' + s.occurrences + ')').join(' · ') : 'No service identified';
+};
 
 export const AlertOptimizationPlan = () => {
   const [zone, setZone] = useState('');
@@ -201,6 +208,34 @@ export const AlertOptimizationPlan = () => {
                   <div><span>Recurrence rate</span><strong>{selectedThresholdCandidate.recurrenceRatePerWeek}/week</strong></div>
                   <div><span>Sample problem IDs</span><strong>{selectedThresholdCandidate.problemIds?.join(', ') || 'Not available'}</strong></div>
                 </div>
+
+                <div className="aop-review-section">
+                  <div className="aop-review-section-title">Impacted services</div>
+                  {selectedThresholdCandidate.impactedServices?.length ? (
+                    <div className="aop-service-table">
+                      <div className="aop-service-table-header">
+                        <span>Service</span>
+                        <span>Alert occurrences</span>
+                        <span>Share</span>
+                      </div>
+                      {selectedThresholdCandidate.impactedServices.map(service => {
+                        const share = selectedThresholdCandidate.occurrences > 0
+                          ? (service.occurrences / selectedThresholdCandidate.occurrences) * 100
+                          : 0;
+                        return (
+                          <div key={service.serviceName} className="aop-service-table-row">
+                            <strong title={service.serviceName}>{service.serviceName}</strong>
+                            <span>{service.occurrences}</span>
+                            <span>{share.toFixed(1)}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="aop-empty">No impacted service entities were returned for this pattern.</div>
+                  )}
+                </div>
+
                 <div className="aop-review-callout">
                   <strong>Why this is a review candidate</strong>
                   <p>This pattern occurred at least 5 times, averaged 15 minutes or less, and has no currently open occurrence in the selected lookback. That indicates a possible noise/sensitivity opportunity, but it does <b>not</b> reveal the current Dynatrace threshold.</p>
@@ -224,7 +259,7 @@ export const AlertOptimizationPlan = () => {
               <div className="aop-email-body">
                 <label>TO<input value={emailTo} onChange={e => setEmailTo(e.target.value)} placeholder="owner@axisbank.com; manager@axisbank.com" /></label>
                 <label>CC<input value={emailCc} onChange={e => setEmailCc(e.target.value)} placeholder="Optional" /></label>
-                <div className="aop-email-preview"><strong>Subject</strong><p>Dynatrace Alert Optimization | {plan.managementZone} | {plan.window}</p><strong>Content</strong><p>Executive summary, recurring patterns, threshold-review candidates, immediate-action queue and Dynatrace Assist recommendations.</p></div>
+                <div className="aop-email-preview"><strong>Subject</strong><p>Alert Optimization Plan: {plan.managementZone} Management Zone</p><strong>Content</strong><p>Executive summary, recurring patterns, impacted services, threshold-review candidates, immediate-action queue and Dynatrace Assist recommendations.</p></div>
                 <div className="aop-email-footer"><button type="button" onClick={() => setEmailOpen(false)}>Cancel</button><button type="button" className="aop-send" disabled={!emailTo.trim() || emailSending} onClick={() => void sendEmail()}>{emailSending ? 'Sending…' : 'Send Report'}</button></div>
               </div>
             </section>
@@ -238,21 +273,68 @@ export const AlertOptimizationPlan = () => {
           <section className="aop-grid">
             <article className="aop-card">
               <div className="aop-section-head"><div><div className="aop-kicker">NOISE / RECURRENCE</div><h2>Repeated alert patterns</h2></div><span>{plan.totals.recurringPatterns} patterns</span></div>
-              <div className="aop-table-wrap"><table><thead><tr><th>Pattern</th><th>Root Cause</th><th>Count</th><th>Open</th><th>Avg Duration</th><th>Severity</th></tr></thead><tbody>
-                {plan.patterns.filter(p => p.occurrences >= 2).slice(0, 20).map(p => <tr key={p.key}><td><b>{p.title}</b><small>{p.impact}</small></td><td>{p.rootCauseEntity}</td><td><strong>{p.occurrences}</strong><small>{p.recurrenceRatePerWeek}/week</small></td><td>{p.openCount}</td><td>{mins(p.avgDurationMinutes)}</td><td><span className="aop-pill">{p.severity}</span></td></tr>)}
+              <div className="aop-table-wrap"><table><thead><tr><th>Pattern</th><th>Root Cause</th><th>Impacted Services</th><th>Count</th><th>Open</th><th>Avg Duration</th><th>Severity</th></tr></thead><tbody>
+                {plan.patterns.filter(p => p.occurrences >= 2).slice(0, 20).map(p => (
+                  <tr key={p.key}>
+                    <td><b>{p.title}</b><small>{p.impact}</small></td>
+                    <td>{p.rootCauseEntity}</td>
+                    <td>
+                      {p.impactedServices?.length ? (
+                        <div className="aop-service-list">
+                          {p.impactedServices.slice(0, 4).map(service => (
+                            <div key={service.serviceName} className="aop-service-list-row">
+                              <span title={service.serviceName}>{service.serviceName}</span>
+                              <strong>{service.occurrences}</strong>
+                            </div>
+                          ))}
+                          {p.impactedServices.length > 4 && <small>+{p.impactedServices.length - 4} more services</small>}
+                        </div>
+                      ) : (
+                        <small>No service entity identified</small>
+                      )}
+                    </td>
+                    <td><strong>{p.occurrences}</strong><small>{p.recurrenceRatePerWeek}/week</small></td>
+                    <td>{p.openCount}</td>
+                    <td>{mins(p.avgDurationMinutes)}</td>
+                    <td><span className="aop-pill">{p.severity}</span></td>
+                  </tr>
+                ))}
               </tbody></table></div>
             </article>
+
             <article className="aop-card">
               <div className="aop-section-head"><div><div className="aop-kicker">THRESHOLD / SENSITIVITY</div><h2>Review candidates</h2></div><span>{plan.thresholdCandidates.length} candidates</span></div>
               <div className="aop-card-note">Review candidates only. Exact threshold values are not inferred from problem history.</div>
-              <div className="aop-list">{plan.thresholdCandidates.slice(0, 12).map(p => <button type="button" className="aop-list-row aop-review-row" key={p.key} onClick={() => setSelectedThresholdCandidate(p)}><div><b>{p.title}</b><small>{p.rootCauseEntity} · {p.occurrences} occurrences · avg {mins(p.avgDurationMinutes)}</small></div><span>Review</span></button>)}{!plan.thresholdCandidates.length && <div className="aop-empty">No strong threshold-review pattern detected.</div>}</div>
+              <div className="aop-list">
+                {plan.thresholdCandidates.slice(0, 12).map(p => (
+                  <button type="button" className="aop-list-row aop-review-row" key={p.key} onClick={() => setSelectedThresholdCandidate(p)}>
+                    <div>
+                      <b>{p.title}</b>
+                      <small>{p.rootCauseEntity} · {p.occurrences} occurrences · avg {mins(p.avgDurationMinutes)}</small>
+                      <small className="aop-list-services">{serviceSummary(p.impactedServices, 3)}</small>
+                    </div>
+                    <span>Review</span>
+                  </button>
+                ))}
+                {!plan.thresholdCandidates.length && <div className="aop-empty">No strong threshold-review pattern detected.</div>}
+              </div>
             </article>
           </section>
 
           <section className="aop-card">
             <div className="aop-section-head"><div><div className="aop-kicker">ACTION QUEUE</div><h2>Immediate attention candidates</h2></div><span>{plan.immediateActions.length} candidates</span></div>
-            <div className="aop-table-wrap"><table><thead><tr><th>Priority Pattern</th><th>Reason</th><th>Open</th><th>Occurrences</th><th>Avg Duration</th><th>Root Cause</th></tr></thead><tbody>
-              {plan.immediateActions.map(p => <tr key={p.key}><td><b>{p.title}</b><small>{p.severity} · {p.impact}</small></td><td>{p.openCount ? 'Currently open' : p.avgDurationMinutes >= 60 ? 'Long-running pattern' : 'Severe problem category'}</td><td>{p.openCount}</td><td>{p.occurrences}</td><td>{mins(p.avgDurationMinutes)}</td><td>{p.rootCauseEntity}</td></tr>)}
+            <div className="aop-table-wrap"><table><thead><tr><th>Priority Pattern</th><th>Reason</th><th>Impacted Services</th><th>Open</th><th>Occurrences</th><th>Avg Duration</th><th>Root Cause</th></tr></thead><tbody>
+              {plan.immediateActions.map(p => (
+                <tr key={p.key}>
+                  <td><b>{p.title}</b><small>{p.severity} · {p.impact}</small></td>
+                  <td>{p.openCount ? 'Currently open' : p.avgDurationMinutes >= 60 ? 'Long-running pattern' : 'Severe problem category'}</td>
+                  <td>{serviceSummary(p.impactedServices, 4)}</td>
+                  <td>{p.openCount}</td>
+                  <td>{p.occurrences}</td>
+                  <td>{mins(p.avgDurationMinutes)}</td>
+                  <td>{p.rootCauseEntity}</td>
+                </tr>
+              ))}
             </tbody></table></div>
           </section>
 
