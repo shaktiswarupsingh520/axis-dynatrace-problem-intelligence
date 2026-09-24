@@ -18,12 +18,14 @@ export type OptimizationReportInput = {
     avgDurationMinutes: number;
     severity: string;
     impact: string;
+    impactedServices?: Array<{ serviceName: string; occurrences: number }>;
   }>;
   thresholdCandidates: Array<{
     title: string;
     rootCauseEntity: string;
     occurrences: number;
     avgDurationMinutes: number;
+    impactedServices?: Array<{ serviceName: string; occurrences: number }>;
   }>;
   immediateActions: Array<{
     title: string;
@@ -33,6 +35,7 @@ export type OptimizationReportInput = {
     avgDurationMinutes: number;
     severity: string;
     impact: string;
+    impactedServices?: Array<{ serviceName: string; occurrences: number }>;
   }>;
   assistAnalysis: string;
   assistStatus: string;
@@ -121,15 +124,24 @@ const buildPdf = (report: OptimizationReportInput): Blob => {
   heading('Repeated / Noisy Alert Patterns');
   const recurring = report.patterns.filter(p => p.occurrences >= 2).slice(0, 15);
   if (!recurring.length) paragraph('No recurring patterns were detected.');
-  recurring.forEach((p, i) => paragraph((i + 1) + '. ' + p.title + ' | Root cause: ' + p.rootCauseEntity + ' | Occurrences: ' + p.occurrences + ' | Open: ' + p.openCount + ' | Avg duration: ' + p.avgDurationMinutes.toFixed(1) + 'm | Severity: ' + p.severity + ' | Impact: ' + p.impact, 8.5, 11));
+  recurring.forEach((p, i) => {
+    const services = (p.impactedServices ?? []).slice(0, 5).map(s => s.serviceName + ' (' + s.occurrences + ')').join(', ') || 'No service entity identified';
+    paragraph((i + 1) + '. ' + p.title + ' | Root cause: ' + p.rootCauseEntity + ' | Occurrences: ' + p.occurrences + ' | Open: ' + p.openCount + ' | Avg duration: ' + p.avgDurationMinutes.toFixed(1) + 'm | Severity: ' + p.severity + ' | Impact: ' + p.impact + ' | Services: ' + services, 8.5, 11);
+  });
 
   heading('Threshold / Sensitivity Review');
   if (!report.thresholdCandidates.length) paragraph('No strong threshold-review pattern was detected.');
-  report.thresholdCandidates.slice(0, 15).forEach((p, i) => paragraph((i + 1) + '. ' + p.title + ' | ' + p.occurrences + ' occurrences | Avg duration: ' + p.avgDurationMinutes.toFixed(1) + 'm | Root cause: ' + p.rootCauseEntity + '. Review the current anomaly-detection configuration before changing threshold or sensitivity.', 8.5, 11));
+  report.thresholdCandidates.slice(0, 15).forEach((p, i) => {
+    const services = (p.impactedServices ?? []).slice(0, 5).map(s => s.serviceName + ' (' + s.occurrences + ')').join(', ') || 'No service entity identified';
+    paragraph((i + 1) + '. ' + p.title + ' | ' + p.occurrences + ' occurrences | Avg duration: ' + p.avgDurationMinutes.toFixed(1) + 'm | Root cause: ' + p.rootCauseEntity + ' | Services: ' + services + '. Review the current anomaly-detection configuration before changing threshold or sensitivity.', 8.5, 11);
+  });
 
   heading('Immediate Action Queue');
   if (!report.immediateActions.length) paragraph('No immediate-action candidates were detected.');
-  report.immediateActions.slice(0, 15).forEach((p, i) => paragraph((i + 1) + '. ' + p.title + ' | ' + (p.openCount ? 'Currently open' : 'Review candidate') + ' | Occurrences: ' + p.occurrences + ' | Avg duration: ' + p.avgDurationMinutes.toFixed(1) + 'm | Severity: ' + p.severity + ' | Root cause: ' + p.rootCauseEntity, 8.5, 11));
+  report.immediateActions.slice(0, 15).forEach((p, i) => {
+    const services = (p.impactedServices ?? []).slice(0, 5).map(s => s.serviceName + ' (' + s.occurrences + ')').join(', ') || 'No service entity identified';
+    paragraph((i + 1) + '. ' + p.title + ' | ' + (p.openCount ? 'Currently open' : 'Review candidate') + ' | Occurrences: ' + p.occurrences + ' | Avg duration: ' + p.avgDurationMinutes.toFixed(1) + 'm | Severity: ' + p.severity + ' | Root cause: ' + p.rootCauseEntity + ' | Services: ' + services, 8.5, 11);
+  });
 
   heading('Dynatrace Assist Recommendations');
   paragraph(report.assistAnalysis || report.assistStatus || 'Assist recommendations were not returned.', 8.5, 11);
@@ -189,11 +201,20 @@ export const downloadAlertOptimizationPdf = (report: OptimizationReportInput) =>
 
 export const buildAlertOptimizationEmail = (report: OptimizationReportInput): string => {
   const recurring = report.patterns.filter(p => p.occurrences >= 2).slice(0, 10)
-    .map((p, i) => (i + 1) + '. ' + p.title + ' - ' + p.occurrences + ' occurrences, avg ' + p.avgDurationMinutes.toFixed(1) + 'm, root cause: ' + p.rootCauseEntity).join('\n');
+    .map((p, i) => {
+      const services = (p.impactedServices ?? []).slice(0, 5).map(s => s.serviceName + ' (' + s.occurrences + ')').join(', ') || 'No service entity identified';
+      return (i + 1) + '. ' + p.title + ' - ' + p.occurrences + ' occurrences, avg ' + p.avgDurationMinutes.toFixed(1) + 'm, root cause: ' + p.rootCauseEntity + ', services: ' + services;
+    }).join('\n');
   const threshold = report.thresholdCandidates.slice(0, 10)
-    .map((p, i) => (i + 1) + '. ' + p.title + ' - ' + p.occurrences + ' occurrences, avg ' + p.avgDurationMinutes.toFixed(1) + 'm').join('\n');
+    .map((p, i) => {
+      const services = (p.impactedServices ?? []).slice(0, 5).map(s => s.serviceName + ' (' + s.occurrences + ')').join(', ') || 'No service entity identified';
+      return (i + 1) + '. ' + p.title + ' - ' + p.occurrences + ' occurrences, avg ' + p.avgDurationMinutes.toFixed(1) + 'm, services: ' + services;
+    }).join('\n');
   const actions = report.immediateActions.slice(0, 10)
-    .map((p, i) => (i + 1) + '. ' + p.title + ' - ' + (p.openCount ? 'open now' : 'review') + ', severity ' + p.severity + ', root cause: ' + p.rootCauseEntity).join('\n');
+    .map((p, i) => {
+      const services = (p.impactedServices ?? []).slice(0, 5).map(s => s.serviceName + ' (' + s.occurrences + ')').join(', ') || 'No service entity identified';
+      return (i + 1) + '. ' + p.title + ' - ' + (p.openCount ? 'open now' : 'review') + ', severity ' + p.severity + ', root cause: ' + p.rootCauseEntity + ', services: ' + services;
+    }).join('\n');
 
   return 'Alert Optimization Plan: ' + report.managementZone + ' Management Zone\n\nSUMMARY\nProblems: ' + report.totals.problems + '\nUnique patterns: ' + report.totals.uniquePatterns + '\nRecurring patterns: ' + report.totals.recurringPatterns + '\nOpen now: ' + report.totals.openProblems + '\nThreshold review candidates: ' + report.totals.thresholdReviewCandidates + '\nImmediate action candidates: ' + report.totals.immediateActionCandidates + '\n\nREPEATED / NOISY PATTERNS\n' + (recurring || 'None detected.') + '\n\nTHRESHOLD / SENSITIVITY REVIEW\n' + (threshold || 'None detected.') + '\n\nIMMEDIATE ACTION QUEUE\n' + (actions || 'None detected.') + '\n\nDYNATRACE ASSIST RECOMMENDATIONS\n' + (report.assistAnalysis || report.assistStatus) + '\n\nNote: recommendations are review proposals and require owner validation before production changes.';
 };
