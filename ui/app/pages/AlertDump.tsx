@@ -25,17 +25,22 @@ const download = (content: string, type: string, name: string) => {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 const csvCell = (value: unknown) => {
-  const cell = value == null
-    ? ''
-    : typeof value === 'object'
-      ? JSON.stringify(value) ?? ''
-      : String(value);
+  let cell = '';
+  if (value != null) {
+    if (typeof value === 'object') {
+      cell = JSON.stringify(value) ?? '';
+    } else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+      cell = String(value);
+    } else {
+      cell = '';
+    }
+  }
   return `"${cell.replace(/"/g, '""')}"`;
 };
 const formatExportTimestamp = (value: unknown): string => {
   if (value == null || value === '') return '';
   const numeric = typeof value === 'number' ? value : (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value) ? Number(value) : NaN);
-  const date = Number.isFinite(numeric) ? new Date(numeric > 1e12 ? numeric : numeric * 1000) : new Date(String(value).replace(/^"|"$/g, ''));
+  const date = Number.isFinite(numeric) ? new Date(numeric > 1e12 ? numeric : numeric * 1000) : new Date(typeof value === 'string' ? value.replace(/^"|"$/g, '') : '');
   return Number.isNaN(date.getTime()) ? text(value) : date.toLocaleString('en-IN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 };
 const displayTimestamp = (value: unknown): string => formatExportTimestamp(value);
