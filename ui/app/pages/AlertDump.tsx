@@ -5,7 +5,7 @@ type Row = Record<string, unknown>;
 interface Zone { id: string; name: string; }
 interface Response { rows: Row[]; count: number; managementZones: Zone[]; availableSeverities: string[]; generatedAt: string; source: string; resultLimit?: number; }
 interface MzCount { managementZone: string; alertCount: number; }
-interface MzResponse { totalAlertCount: number; counts: MzCount[]; generatedAt: string; }
+interface MzResponse { totalAlertCount: number; counts: MzCount[]; managementZoneCount: number; managementZonesWithAlerts: number; assignedProblemCount: number; generatedAt: string; source: string; }
 
 const text = (value: unknown): string => {
   if (value == null) return '';
@@ -82,7 +82,7 @@ export const AlertDump = () => {
   const loadManagementZoneSummary = useCallback(async () => {
     setSummaryLoading(true);
     try {
-      const body = await postJson<MzResponse>('/api/getAlertDumpManagementZoneSummary', { from: 'now()-1y', to: 'now()', status, severity });
+      const body = await postJson<MzResponse>('/api/getAlertDumpManagementZoneSummary', { from: 'now-1y', to: 'now', status });
       setSummary(body);
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'Unable to load Management Zone summary.');
