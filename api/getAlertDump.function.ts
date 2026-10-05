@@ -1,81 +1,37 @@
-import { queryExecutionClient } from '@dynatrace-sdk/client-query';
+import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 import { settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 
-type Row = Record<string, unknown>;
-interface Payload { from?: string; to?: string; status?: string; severity?: string; managementZoneId?: string; limit?: number; }
+type Payload = {
+  from?: string;
+  to?: string;
+  status?: string;
+  severity?: string;
+  managementZoneId?: string;
+  limit?: number;
+};
+
 interface Zone { id: string; name: string; }
 
-const text = (v: unknown): string => {
-  if (v == null) return '';
-  if (typeof v === 'string') return v;
-  if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'bigint') return String(v);
-  if (Array.isArray(v)) return v.map(text).filter(Boolean).join('; ');
-  return JSON.stringify(v) ?? '';
+type Problem = {
+  displayId?: string;
+  title?: string;
+  status?: string;
+  severityLevel?: string;
+  impactLevel?: string;
+  startTime?: number;
+  endTime?: number;
+  affectedEntities?: Array<{ entityId?: string; name?: string; type?: string }>;
+  rootCauseEntity?: { entityId?: string; name?: string; type?: string } | string;
+  managementZones?: Array<{ id?: string; name?: string }>;
 };
-const esc = (v: string) => v.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 
-async function dql(query: string, max = 50000): Promise<Row[]> {
-  const response = await queryExecutionClient.queryExecute({
-    body: { query, requestTimeoutMilliseconds: 60000, maxResultRecords: max },
-  });
-  let result = response.result;
-  for (let attempt = 0; !result && response.requestToken && attempt < 60; attempt += 1) {
-    const poll = await queryExecutionClient.queryPoll({
-      requestToken: response.requestToken,
-      requestTimeoutMilliseconds: 60000,
-    });
-    result = poll.result;
-    if (!result) await new Promise<void>((resolve) => setTimeout(resolve, 500));
-  }
-  if (!result) throw new Error('Dynatrace query did not return a result.');
-  return Array.isArray(result.records)
-    ? result.records.filter((r): r is Row => Boolean(r) && typeof r === 'object' && !Array.isArray(r))
-    : [];
-}
-
-function buildQuery(from: string, to: string, status: string, severity: string, zone: string, limit: number): string {
-  const safeFrom = from || 'now()-24h';
-  const safeTo = to || 'now()';
-  const filters = ['not(dt.davis.is_duplicate)'];
-  if (status === 'ACTIVE') filters.push('(event.status == "ACTIVE" or event.status == "OPEN")');
-  if (status === 'CLOSED') filters.push('(event.status == "CLOSED" or event.status == "RESOLVED")');
-  if (severity !== 'ALL' && ['1', '2', '3', '4', '5'].includes(severity)) filters.push(`event.severity == ${Number(severity)}`);
-
-  let query = `fetch dt.davis.problems, from:${safeFrom}, to:${safeTo}
-| filter ${filters.join(' and ')}
-| expand related_entity_names
-| lookup sourceField:related_entity_names, lookupField:entity.name, [
-  fetch dt.entity.host
-  | expand managementZones
-  | fields entity.name, managementZones
-], fields:{zoneHostName=entity.name, zoneNames=managementZones}`;
-
-  if (zone) {
-    query += `\n| filter isNotNull(zoneHostName) and matchesValue(zoneNames, "${esc(zone)}")`;
-  }
-
-  query += `
-| summarize {
-    event_name = takeAny(event.name),
-    event_status = takeAny(event.status),
-    event_severity = takeAny(event.severity),
-    event_category = takeAny(event.category),
-    impact_level = takeAny(dt.davis.impact_level),
-    event_start = takeAny(event.start),
-    event_end = takeAny(event.end),
-    affected_entity_names = takeAny(affected_entity_names),
-    affected_entity_ids = takeAny(affected_entity_ids),
-    root_cause_entity_id = takeAny(root_cause_entity_id),
-    root_cause_entity_name = takeAny(root_cause_entity_name),
-    event_description = takeAny(event.description),
-    management_zones = collectDistinct(zoneNames)
-  }, by:{display_id}
-| fieldsAdd problem_duration_minutes = toDouble((coalesce(event_end, now()) - event_start) / 1m)
-| sort event_start desc
-| limit ${limit}`;
-
-  return query;
-}
+const text = (value: unknown): string => {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+  if (Array.isArray(value)) return value.map(text).filter(Boolean).join('; ');
+  return JSON.stringify(value) ?? '';
+};
 
 async function loadZones(): Promise<Zone[]> {
   try {
@@ -86,20 +42,24 @@ async function loadZones(): Promise<Zone[]> {
       fields: 'objectId,value',
       pageSize: 500,
     });
+
     const collect = (items: unknown) => {
       if (!Array.isArray(items)) return;
       for (const item of items) {
         if (!item || typeof item !== 'object') continue;
-        const record = item as { objectId?: string; value?: { name?: unknown } };
+        const record = item as { objectId?: unknown; value?: { name?: unknown } };
+        const id = typeof record.objectId === 'string' ? record.objectId : '';
         const name = typeof record.value?.name === 'string' ? record.value.name.trim() : '';
-        if (name) zones.push({ id: name, name });
+        if (id && name) zones.push({ id, name });
       }
     };
+
     collect(response.items);
     for (let page = 0; response.nextPageKey && page < 20; page += 1) {
       response = await settingsObjectsClient.getSettingsObjects({ nextPageKey: response.nextPageKey });
       collect(response.items);
     }
+
     return [...new Map(zones.map((zone) => [zone.name, zone])).values()]
       .sort((a, b) => a.name.localeCompare(b.name));
   } catch {
@@ -107,49 +67,115 @@ async function loadZones(): Promise<Zone[]> {
   }
 }
 
-function transform(row: Row): Row {
-  const zones = text(row.management_zones);
+function severitySelector(severity: string): string {
+  if (!['1', '2', '3', '4', '5'].includes(severity)) return '';
+  return `severityLevel("level-${severity}")`;
+}
+
+function buildProblemSelector(status: string, severity: string, zone: string): string | undefined {
+  const criteria: string[] = [];
+
+  if (status === 'ACTIVE') criteria.push('status("open")');
+  if (status === 'CLOSED') criteria.push('status("closed")');
+
+  const severityCriterion = severitySelector(severity);
+  if (severityCriterion) criteria.push(severityCriterion);
+
+  if (zone) {
+    // managementZoneId is the settings object ID in this app. Problems API supports
+    // management-zone-name filtering, so resolve the name before querying.
+    criteria.push(`managementZones("${zone.replace(/\\/g, '\\\\').replace(/"/g, '\\\"')}")`);
+  }
+
+  return criteria.length ? criteria.join(',') : undefined;
+}
+
+function severityLabel(value: string): string {
+  const map: Record<string, string> = {
+    AVAILABILITY: '1',
+    ERROR: '2',
+    PERFORMANCE: '3',
+    RESOURCE_CONTENTION: '3',
+    CUSTOM_ALERT: '4',
+    MONITORING_UNAVAILABLE: '1',
+    INFO: '5',
+  };
+  return map[value] ?? value;
+}
+
+function transform(problem: Problem): Record<string, unknown> {
+  const affected = (problem.affectedEntities ?? []).map((entity) => entity.name || entity.entityId).filter(Boolean);
+  const zones = (problem.managementZones ?? []).map((zone) => zone.name || zone.id).filter(Boolean);
+  const root = problem.rootCauseEntity;
+  const rootName = typeof root === 'string' ? root : (root?.name || root?.entityId || '');
+
   return {
-    display_id: text(row.display_id),
-    'event.name': text(row.event_name),
-    'event.status': text(row.event_status),
-    'event.severity': text(row.event_severity),
-    'event.category': text(row.event_category),
-    'dt.davis.impact_level': text(row.impact_level),
-    'event.start': text(row.event_start),
-    'event.end': text(row.event_end),
-    'problem.duration': Number.isFinite(Number(text(row.problem_duration_minutes)))
-      ? `${Math.max(0, Number(text(row.problem_duration_minutes))).toFixed(1)} min`
+    display_id: text(problem.displayId),
+    'event.name': text(problem.title),
+    'event.status': text(problem.status),
+    'event.severity': severityLabel(text(problem.severityLevel)),
+    'event.category': '',
+    'dt.davis.impact_level': text(problem.impactLevel),
+    'event.start': text(problem.startTime),
+    'event.end': problem.endTime && problem.endTime > 0 ? text(problem.endTime) : '',
+    'problem.duration': problem.startTime
+      ? `${Math.max(0, ((problem.endTime && problem.endTime > 0 ? problem.endTime : Date.now()) - problem.startTime) / 60000).toFixed(1)} min`
       : '—',
-    affected_entity_names: text(row.affected_entity_names),
-    affected_entity_ids: text(row.affected_entity_ids),
-    root_cause_entity_id: text(row.root_cause_entity_id),
-    root_cause_entity_name: text(row.root_cause_entity_name) || 'Not identified',
-    management_zones: zones || 'Unassigned',
-    'event.description': text(row.event_description),
+    affected_entity_names: affected.join('; '),
+    affected_entity_ids: (problem.affectedEntities ?? []).map((entity) => entity.entityId).filter(Boolean).join('; '),
+    root_cause_entity_id: typeof root === 'string' ? root : text(root?.entityId),
+    root_cause_entity_name: rootName || 'Not identified',
+    management_zones: zones.length ? zones.join('; ') : 'Unassigned',
+    'event.description': '',
+  };
+}
+
+async function getProblems(
+  from: string,
+  to: string,
+  status: string,
+  severity: string,
+  zoneName: string,
+  limit: number,
+): Promise<{ rows: Record<string, unknown>[]; totalCount: number }> {
+  const selector = buildProblemSelector(status, severity, zoneName);
+  const response = await problemsClient.getProblems({
+    from,
+    to,
+    pageSize: Math.min(limit, 500),
+    ...(selector ? { problemSelector: selector } : {}),
+  });
+
+  const problems = Array.isArray(response.problems) ? response.problems as Problem[] : [];
+  return {
+    rows: problems.map(transform),
+    totalCount: Number(response.totalCount ?? problems.length),
   };
 }
 
 export default async function (payload: Payload = {}) {
   const from = payload.from ?? 'now-24h';
-  const to = payload.to ?? 'now()';
+  const to = payload.to ?? 'now';
   const status = payload.status ?? 'ALL';
   const severity = payload.severity ?? 'ALL';
-  const zone = payload.managementZoneId && payload.managementZoneId !== 'ALL' ? payload.managementZoneId : '';
-  const requestedLimit = Number(payload.limit ?? 50000);
-  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 50000) : 50000;
-  const [problemRows, managementZones] = await Promise.all([
-    dql(buildQuery(from, to, status, severity, zone, limit), limit),
-    loadZones(),
-  ]);
-  const rows = problemRows.map(transform);
+  const requestedLimit = Number(payload.limit ?? 500);
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 500) : 500;
+
+  const zones = await loadZones();
+  const zoneName = payload.managementZoneId && payload.managementZoneId !== 'ALL'
+    ? zones.find((zone) => zone.id === payload.managementZoneId || zone.name === payload.managementZoneId)?.name ?? ''
+    : '';
+
+  const result = await getProblems(from, to, status, severity, zoneName, limit);
+
   return {
-    rows,
-    count: rows.length,
-    managementZones,
+    rows: result.rows,
+    count: result.rows.length,
+    totalCount: result.totalCount,
+    managementZones: zones,
     availableSeverities: ['1', '2', '3', '4', '5'],
     generatedAt: new Date().toISOString(),
-    source: 'Dynatrace Grail / Davis Problems',
+    source: 'Dynatrace Problems API v2',
     resultLimit: limit,
   };
 }
