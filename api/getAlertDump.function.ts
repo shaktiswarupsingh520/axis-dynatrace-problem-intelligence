@@ -278,9 +278,11 @@ export default async function (payload: Payload = {}) {
     ? zones.find((zone) => zone.id === payload.managementZoneId || zone.name === payload.managementZoneId)?.name ?? ''
     : '';
 
+  const profileToZone = await loadAlertingProfileMappings(zones);
+
   let result;
   try {
-    result = await getProblems(from, to, status, severity, zoneName, limit, zones, payload.nextPageKey);
+    result = await getProblems(from, to, status, severity, zoneName, limit, zones, profileToZone, payload.nextPageKey);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return {
