@@ -101,8 +101,8 @@ async function mapWithConcurrency<T, R>(
 }
 
 export default async function (payload: Payload = {}) {
-  const from = payload.from ?? 'now()-1y';
-  const to = payload.to ?? 'now()';
+  const from = payload.from ?? 'now-1y';
+  const to = payload.to ?? 'now';
 
   const [managementZones, totalAlertCount] = await Promise.all([
     loadZones(),
