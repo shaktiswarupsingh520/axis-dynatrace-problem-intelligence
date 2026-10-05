@@ -1,5 +1,5 @@
-import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
-import { settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
+import { problemsClient, settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
+import { queryExecutionClient } from '@dynatrace-sdk/client-query';
 
 type Payload = {
   from?: string;
@@ -25,6 +25,7 @@ type Problem = {
   rootCauseEntity?: { entityId?: string; name?: string; type?: string } | string;
   managementZones?: Array<{ id?: string; name?: string }>;
   problemFilters?: Array<{ id?: string; name?: string }>;
+  ['event.description']?: string;
 };
 
 const text = (value: unknown): string => {
@@ -178,6 +179,59 @@ function buildProblemSelector(status: string, severity: string, zone: string): s
   return criteria.length ? criteria.join(',') : undefined;
 }
 
+function dqlTime(value: string): string {
+  if (!value) return 'now()';
+  if (value === 'now' || value === 'now()') return 'now()';
+  return value.replace(/^now-(\\d+[mhdwMy])$/, 'now()-$1');
+}
+
+async function loadDescriptions(
+  displayIds: string[],
+  from: string,
+  to: string,
+): Promise<Map<string, string>> {
+  const ids = [...new Set(displayIds.map((id) => id.trim()).filter(Boolean))];
+  const descriptions = new Map<string, string>();
+  if (!ids.length) return descriptions;
+
+  const values = ids.map((id) => `"${id.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(', ');
+  const query = `fetch dt.davis.problems, from:${dqlTime(from)}, to:${dqlTime(to)}
+| filter in(display_id, array(${values}))
+| fields display_id, event.description, timestamp
+| filter isNotNull(event.description)
+| dedup display_id, sort: { timestamp desc }
+| fields display_id, event.description
+| limit ${Math.min(ids.length, 500)}`;
+
+  try {
+    const response = await queryExecutionClient.queryExecute({
+      body: { query, requestTimeoutMilliseconds: 30000, maxResultRecords: Math.min(ids.length, 500) },
+    });
+    let result = response.result;
+    for (let attempt = 0; !result && response.requestToken && attempt < 30; attempt += 1) {
+      const poll = await queryExecutionClient.queryPoll({
+        requestToken: response.requestToken,
+        requestTimeoutMilliseconds: 30000,
+      });
+      result = poll.result;
+      if (!result) await new Promise<void>((resolve) => setTimeout(resolve, 300));
+    }
+    if (!result || !Array.isArray(result.records)) return descriptions;
+
+    for (const record of result.records) {
+      if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
+      const row = record as Record<string, unknown>;
+      const id = text(row.display_id).trim();
+      const description = text(row['event.description']).trim();
+      if (id && description) descriptions.set(id, description);
+    }
+  } catch {
+    // Description enrichment is best-effort; the Problems API result remains usable.
+  }
+
+  return descriptions;
+}
+
 function severityLabel(value: string): string {
   const map: Record<string, string> = {
     AVAILABILITY: '1',
@@ -216,7 +270,7 @@ function transform(problem: Problem, zones: Zone[], profileToZone: Map<string, s
     root_cause_entity_name: rootName || 'Not identified',
     management_zones: rawZoneValues.length ? rawZoneValues.map((value) => resolveZoneLabel(value, zones, profileToZone)).filter(Boolean).join('; ') : 'Unassigned',
     alerting_profiles: alertingProfiles.length ? alertingProfiles.join('; ') : 'None',
-    'event.description': '',
+    'event.description': text(problem['event.description']),
   };
 }
 
@@ -252,14 +306,27 @@ async function getProblems(
   const problems = Array.isArray(response.problems)
     ? (response.problems as unknown as Problem[])
     : [];
+  const rows = problems.flatMap((problem) => {
+    try {
+      return [transform(problem, zones, profileToZone)];
+    } catch {
+      return [];
+    }
+  });
+
+  const descriptions = await loadDescriptions(
+    rows.map((row) => text(row.display_id)),
+    from,
+    to,
+  );
+  for (const row of rows) {
+    const id = text(row.display_id);
+    const description = descriptions.get(id);
+    if (description) row['event.description'] = description;
+  }
+
   return {
-    rows: problems.flatMap((problem) => {
-      try {
-        return [transform(problem, zones, profileToZone)];
-      } catch {
-        return [];
-      }
-    }),
+    rows,
     totalCount: Number(response.totalCount ?? problems.length),
     nextPageKey: response.nextPageKey ?? undefined,
   };
