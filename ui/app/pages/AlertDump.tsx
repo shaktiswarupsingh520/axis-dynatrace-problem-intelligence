@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 type Row = Record<string, unknown>;
 interface Zone { id: string; name: string; }
-interface Response { rows: Row[]; count: number; totalCount?: number; nextPageKey?: string; managementZones: Zone[]; availableSeverities: string[]; generatedAt: string; source: string; resultLimit?: number; }
+interface Response { rows: Row[]; count: number; totalCount?: number; nextPageKey?: string; managementZones: Zone[]; availableSeverities: string[]; generatedAt: string; source: string; resultLimit?: number; error?: string; }
 interface MzCount { managementZone: string; alertCount: number; }
 interface MzResponse { totalAlertCount: number; counts: MzCount[]; managementZoneCount: number; managementZonesWithAlerts: number; assignedProblemCount: number; generatedAt: string; source: string; }
 
@@ -73,6 +73,7 @@ export const AlertDump = () => {
         from: `now-${nextRange}`, to: 'now()', status: nextStatus, severity: nextSeverity,
         managementZoneId: nextZone, limit: 500,
       });
+      if (body.error) throw new Error(body.error);
       setData(body); setPage(1);
     } catch (cause: unknown) {
       setData(null); setError(cause instanceof Error ? cause.message : 'Unable to load Alert Dump.');
