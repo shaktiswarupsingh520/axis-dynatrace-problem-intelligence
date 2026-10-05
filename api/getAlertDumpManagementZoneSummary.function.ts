@@ -1,7 +1,7 @@
 import { problemsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 import { settingsObjectsClient } from '@dynatrace-sdk/client-classic-environment-v2';
 
-type Payload = { from?: string; to?: string; status?: string };
+type Payload = { from?: string; to?: string; status?: string; severity?: string };
 type Zone = { id: string; name: string };
 type ProblemPage = { totalCount?: number; problems?: unknown[] };
 
@@ -46,6 +46,7 @@ function buildProblemSelector(status?: string, managementZoneName?: string): str
 
   if (status === 'ACTIVE') criteria.push('status("open")');
   if (status === 'CLOSED') criteria.push('status("closed")');
+  if (severity && ['1', '2', '3', '4', '5'].includes(severity)) criteria.push(`severityLevel("level-${severity}")`);
   if (managementZoneName) {
     criteria.push(`managementZones("${escapeSelectorValue(managementZoneName)}")`);
   }
@@ -57,9 +58,10 @@ async function getProblemCount(
   from: string,
   to: string,
   status?: string,
+  severity?: string,
   managementZoneName?: string,
 ): Promise<number> {
-  const problemSelector = buildProblemSelector(status, managementZoneName);
+  const problemSelector = buildProblemSelector(status, severity, managementZoneName);
   const config: {
     from: string;
     to: string;
@@ -106,7 +108,7 @@ export default async function (payload: Payload = {}) {
 
   const [managementZones, totalAlertCount] = await Promise.all([
     loadZones(),
-    getProblemCount(from, to, payload.status),
+    getProblemCount(from, to, payload.status, payload.severity),
   ]);
 
   const zoneCounts = await mapWithConcurrency(
@@ -114,7 +116,7 @@ export default async function (payload: Payload = {}) {
     async (zone) => ({
       managementZoneId: zone.id,
       managementZone: zone.name,
-      alertCount: await getProblemCount(from, to, payload.status, zone.name),
+      alertCount: await getProblemCount(from, to, payload.status, payload.severity, zone.name),
     }),
     8,
   );
