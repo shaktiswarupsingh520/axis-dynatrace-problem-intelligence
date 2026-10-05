@@ -146,7 +146,7 @@ async function getProblems(
       ? { nextPageKey }
       : {
           from,
-          to,
+          ...(to && to !== 'now' ? { to } : {}),
           pageSize: Math.min(limit, 100),
           ...(selector ? { problemSelector: selector } : {}),
         },
