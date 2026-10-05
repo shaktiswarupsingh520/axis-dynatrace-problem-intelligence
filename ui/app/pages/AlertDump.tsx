@@ -163,12 +163,10 @@ export const AlertDump = () => {
   };
 
   const apply = (kind: 'range' | 'status' | 'severity' | 'zone', value: string) => {
-    const next = { range, status, severity, zoneId, [kind]: value };
     if (kind === 'range') setRange(value);
     if (kind === 'status') setStatus(value);
     if (kind === 'severity') setSeverity(value);
     if (kind === 'zone') setZoneId(value);
-    void load(next.range, next.status, next.severity, next.zoneId);
   };
 
   const th: React.CSSProperties = { position: 'sticky', top: 0, zIndex: 2, background: '#eaf1f7', color: '#172334', borderBottom: '1px solid #cbd7e3', padding: '10px 9px', textAlign: 'left', whiteSpace: 'nowrap' };
