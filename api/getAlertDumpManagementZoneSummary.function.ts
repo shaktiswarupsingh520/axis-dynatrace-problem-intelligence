@@ -6,7 +6,7 @@ type Zone = { id: string; name: string };
 type ProblemPage = { totalCount?: number; problems?: unknown[] };
 
 const escapeSelectorValue = (value: string): string =>
-  value.replace(/\\/g, '\\\\').replace(/"/g, '\\\"');
+  value.replace(/\\/g, '\\\\').replace(/"/g, '\\' + '"');
 
 async function loadZones(): Promise<Zone[]> {
   try {
