@@ -152,7 +152,9 @@ async function getProblems(
         },
   );
 
-  const problems = Array.isArray(response.problems) ? response.problems as Problem[] : [];
+  const problems = Array.isArray(response.problems)
+    ? (response.problems as unknown as Problem[])
+    : [];
   return {
     rows: problems.map(transform),
     totalCount: Number(response.totalCount ?? problems.length),
