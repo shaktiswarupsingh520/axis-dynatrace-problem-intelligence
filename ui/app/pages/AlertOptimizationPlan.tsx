@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import './AlertOptimizationPlan.css';
-import { buildAlertOptimizationEmail, downloadAlertOptimizationPdf, type OptimizationReportInput } from './AlertOptimizationReport';
+import { buildAlertOptimizationEmail, downloadAlertOptimizationPdf } from './AlertOptimizationReport';
 
 type Zone = { id: string; name: string };
 type ServiceImpact = { serviceName: string; occurrences: number };
