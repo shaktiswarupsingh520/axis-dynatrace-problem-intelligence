@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 
 type Row = Record<string, unknown>;
 interface Zone { id: string; name: string; }
-interface Response { rows: Row[]; count: number; managementZones: Zone[]; availableSeverities: string[]; generatedAt: string; source: string; resultLimit?: number; }
+interface Response { rows: Row[]; count: number; totalCount?: number; nextPageKey?: string; managementZones: Zone[]; availableSeverities: string[]; generatedAt: string; source: string; resultLimit?: number; }
 interface MzCount { managementZone: string; alertCount: number; }
 interface MzResponse { totalAlertCount: number; counts: MzCount[]; managementZoneCount: number; managementZonesWithAlerts: number; assignedProblemCount: number; generatedAt: string; source: string; }
 
@@ -71,7 +71,7 @@ export const AlertDump = () => {
     try {
       const body = await postJson<Response>('/api/getAlertDump', {
         from: `now-${nextRange}`, to: 'now()', status: nextStatus, severity: nextSeverity,
-        managementZoneId: nextZone, limit: nextRange === '1y' ? 50000 : 50000,
+        managementZoneId: nextZone, limit: 500,
       });
       setData(body); setPage(1);
     } catch (cause: unknown) {
@@ -114,11 +114,25 @@ export const AlertDump = () => {
   };
 
   const fetchWindow = async (olderDays: number, newerDays: number): Promise<Row[]> => {
-    const body = await postJson<Response>('/api/getAlertDump', {
-      from: `now()-${olderDays}d`, to: newerDays === 0 ? 'now()' : `now()-${newerDays}d`,
-      status, severity, managementZoneId: zoneId, limit: 50000,
-    });
-    return body.rows;
+    const rows: Row[] = [];
+    let nextPageKey: string | undefined;
+    const maxRowsPerWindow = 50000;
+    do {
+      const body = await postJson<Response>('/api/getAlertDump', nextPageKey
+        ? { nextPageKey }
+        : {
+            from: `now()-${olderDays}d`,
+            to: newerDays === 0 ? 'now()' : `now()-${newerDays}d`,
+            status,
+            severity,
+            managementZoneId: zoneId,
+            limit: 500,
+          });
+      rows.push(...body.rows);
+      nextPageKey = body.nextPageKey;
+      if (rows.length >= maxRowsPerWindow) break;
+    } while (nextPageKey);
+    return rows;
   };
 
   const collectFullYear = async (olderDays: number, newerDays: number): Promise<Row[]> => {
