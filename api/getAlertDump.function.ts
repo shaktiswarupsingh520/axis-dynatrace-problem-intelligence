@@ -68,7 +68,7 @@ function buildQuery(from: string, to: string, status: string, severity: string, 
     root_cause_entity_id = takeAny(root_cause_entity_id),
     root_cause_entity_name = takeAny(root_cause_entity_name),
     event_description = takeAny(event.description),
-    management_zones = collectDistinct(zoneNames, expand:true)
+    management_zones = collectDistinct(zoneNames)
   }, by:{display_id}
 | fieldsAdd problem_duration_minutes = toDouble((coalesce(event_end, now()) - event_start) / 1m)
 | sort event_start desc
