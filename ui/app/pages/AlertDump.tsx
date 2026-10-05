@@ -97,7 +97,7 @@ export const AlertDump = () => {
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'Unable to load Management Zone summary.');
     } finally { setSummaryLoading(false); }
-  }, [status, severity]);
+  }, [status]);
 
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { void loadManagementZoneSummary(); }, [loadManagementZoneSummary]);
@@ -108,7 +108,7 @@ export const AlertDump = () => {
   }, []);
 
   const rows = useMemo(() => data?.rows ?? [], [data]);
-  const zones = data?.managementZones ?? [];
+  const zones = useMemo(() => data?.managementZones ?? [], [data]);
   const filteredZones = useMemo(() => {
     const query = zoneSearch.trim().toLowerCase();
     return query ? zones.filter((zone) => zone.name.toLowerCase().includes(query)) : zones;
