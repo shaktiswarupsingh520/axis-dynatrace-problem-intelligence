@@ -13,6 +13,18 @@ type Payload = {
 
 interface Zone { id: string; name: string; }
 
+type ProblemPage = {
+  problems?: Problem[];
+  totalCount?: number;
+  nextPageKey?: string;
+};
+
+type AlertDumpResult = {
+  rows: Record<string, unknown>[];
+  totalCount: number;
+  nextPageKey?: string;
+};
+
 type Problem = {
   displayId?: string;
   title?: string;
@@ -173,7 +185,7 @@ function buildProblemSelector(status: string, severity: string, zone: string): s
   if (zone) {
     // managementZoneId is the settings object ID in this app. Problems API supports
     // management-zone-name filtering, so resolve the name before querying.
-    criteria.push(`managementZones("${zone.replace(/\\/g, '\\\\').replace(/"/g, '\\\"')}")`);
+    criteria.push(`managementZones("${zone.replace(/\\/g, '\\\\').replace(/"/g, '\\' + '"')}")`);
   }
 
   return criteria.length ? criteria.join(',') : undefined;
@@ -284,9 +296,9 @@ async function getProblems(
   zones: Zone[],
   profileToZone: Map<string, string>,
   nextPageKey?: string,
-): Promise<{ rows: Record<string, unknown>[]; totalCount: number; nextPageKey?: string }> {
+): Promise<AlertDumpResult> {
   const selector = buildProblemSelector(status, severity, zoneName);
-  let response;
+  let response: ProblemPage;
   try {
     response = await problemsClient.getProblems(
       nextPageKey
@@ -297,15 +309,13 @@ async function getProblems(
             pageSize: Math.min(limit, 500),
             ...(selector ? { problemSelector: selector } : {}),
           },
-    );
+    ) as unknown as ProblemPage;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`Problems API getProblems failed: ${detail}`);
   }
 
-  const problems = Array.isArray(response.problems)
-    ? (response.problems as unknown as Problem[])
-    : [];
+  const problems = Array.isArray(response.problems) ? response.problems : [];
   const rows = problems.flatMap((problem) => {
     try {
       return [transform(problem, zones, profileToZone)];
@@ -347,7 +357,7 @@ export default async function (payload: Payload = {}) {
 
   const profileToZone = await loadAlertingProfileMappings(zones);
 
-  let result;
+  let result: AlertDumpResult;
   try {
     result = await getProblems(from, to, status, severity, zoneName, limit, zones, profileToZone, payload.nextPageKey);
   } catch (error) {
