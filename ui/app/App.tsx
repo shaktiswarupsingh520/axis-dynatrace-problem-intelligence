@@ -5,6 +5,7 @@ import { Header } from './components/Header';
 import { Home } from './pages/Home';
 import { AlertDump } from './pages/AlertDump';
 import { RcaWorkbench } from './pages/RcaWorkbench';
+import { AlertOptimizationPlan } from './pages/AlertOptimizationPlan';
 
 export const App = () => <PageLayout>
   <PageLayout.Header><Header /></PageLayout.Header>
@@ -12,5 +13,6 @@ export const App = () => <PageLayout>
     <Route path="/" element={<Home />} />
     <Route path="/alert-dump" element={<AlertDump />} />
     <Route path="/rca" element={<RcaWorkbench />} />
+    <Route path="/alert-optimization" element={<AlertOptimizationPlan />} />
   </Routes></PageLayout.Content>
 </PageLayout>;
