@@ -66,12 +66,12 @@ async function getProblemCount(
   const problemSelector = buildProblemSelector(status, severity, managementZoneName);
   const config: {
     from: string;
-    to: string;
+    to?: string;
     pageSize: number;
     problemSelector?: string;
   } = {
     from,
-    to,
+    ...(to && to !== 'now' && to !== 'now()' ? { to } : {}),
     pageSize: 1,
   };
 
