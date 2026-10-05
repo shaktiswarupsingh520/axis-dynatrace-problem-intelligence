@@ -9,39 +9,41 @@ const escapeSelectorValue = (value: string): string =>
   value.replace(/\\/g, '\\\\').replace(/"/g, '\\\"');
 
 async function loadZones(): Promise<Zone[]> {
-  const zones: Zone[] = [];
+  try {
+    const zones: Zone[] = [];
 
-  let response = await settingsObjectsClient.getSettingsObjects({
-    schemaIds: 'builtin:management-zones',
-    scopes: 'environment',
-    fields: 'objectId,value',
-    pageSize: 500,
-  });
-
-  const collect = (items: unknown) => {
-    if (!Array.isArray(items)) return;
-    for (const item of items) {
-      if (!item || typeof item !== 'object') continue;
-      const record = item as { objectId?: unknown; value?: { name?: unknown } };
-      const objectId = typeof record.objectId === 'string' ? record.objectId : '';
-      const name = typeof record.value?.name === 'string' ? record.value.name.trim() : '';
-      if (objectId && name) zones.push({ id: objectId, name });
-    }
-  };
-
-  collect(response.items);
-  for (let page = 0; response.nextPageKey && page < 20; page += 1) {
-    response = await settingsObjectsClient.getSettingsObjects({
-      nextPageKey: response.nextPageKey,
+    let response = await settingsObjectsClient.getSettingsObjects({
+      schemaIds: 'builtin:management-zones',
+      scopes: 'environment',
+      fields: 'objectId,value',
+      pageSize: 500,
     });
-    collect(response.items);
-  }
 
-  return [...new Map(zones.map((zone) => [zone.name, zone])).values()]
-    .sort((a, b) => a.name.localeCompare(b.name));
+    const collect = (items: unknown) => {
+      if (!Array.isArray(items)) return;
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        const record = item as { objectId?: unknown; value?: { name?: unknown } };
+        const objectId = typeof record.objectId === 'string' ? record.objectId : '';
+        const name = typeof record.value?.name === 'string' ? record.value.name.trim() : '';
+        if (objectId && name) zones.push({ id: objectId, name });
+      }
+    };
+
+    collect(response.items);
+    for (let page = 0; response.nextPageKey && page < 20; page += 1) {
+      response = await settingsObjectsClient.getSettingsObjects({ nextPageKey: response.nextPageKey });
+      collect(response.items);
+    }
+
+    return [...new Map(zones.map((zone) => [zone.name, zone])).values()]
+      .sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
 }
 
-function buildProblemSelector(status?: string, managementZoneName?: string): string | undefined {
+function buildProblemSelector(status?: string, severity?: string, managementZoneName?: string): string | undefined {
   const criteria: string[] = [];
 
   if (status === 'ACTIVE') criteria.push('status("open")');
@@ -118,7 +120,7 @@ export default async function (payload: Payload = {}) {
       managementZone: zone.name,
       alertCount: await getProblemCount(from, to, payload.status, payload.severity, zone.name),
     }),
-    8,
+    3,
   );
 
   const counts = zoneCounts
