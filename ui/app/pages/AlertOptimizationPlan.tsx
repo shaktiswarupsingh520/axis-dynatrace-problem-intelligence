@@ -130,7 +130,7 @@ export const AlertOptimizationPlan = () => {
           to: emailTo.split(/[;,\s]+/).map(v => v.trim()).filter(Boolean),
           cc: emailCc.split(/[;,\s]+/).map(v => v.trim()).filter(Boolean),
           subject: 'Alert Optimization Plan: ' + plan.managementZone + ' Management Zone',
-          message: buildAlertOptimizationEmail(plan as OptimizationReportInput),
+          message: buildAlertOptimizationEmail(plan),
         }),
       });
       const body = await response.text();
@@ -228,7 +228,7 @@ export const AlertOptimizationPlan = () => {
           <section className="aop-report-actions">
             <div><strong>Report actions</strong><span>Export or distribute the generated optimization plan for the selected window.</span></div>
             <div className="aop-action-buttons">
-              <button type="button" onClick={() => downloadAlertOptimizationPdf(plan as OptimizationReportInput)}>↓ Download PDF</button>
+              <button type="button" onClick={() => downloadAlertOptimizationPdf(plan)}>↓ Download PDF</button>
               <button type="button" onClick={() => { setEmailStatus(''); setEmailOpen(true); }}>✉ Email Report</button>
             </div>
           </section>
