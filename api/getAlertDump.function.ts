@@ -8,6 +8,7 @@ type Payload = {
   severity?: string;
   managementZoneId?: string;
   limit?: number;
+  nextPageKey?: string;
 };
 
 interface Zone { id: string; name: string; }
@@ -137,19 +138,25 @@ async function getProblems(
   severity: string,
   zoneName: string,
   limit: number,
-): Promise<{ rows: Record<string, unknown>[]; totalCount: number }> {
+  nextPageKey?: string,
+): Promise<{ rows: Record<string, unknown>[]; totalCount: number; nextPageKey?: string }> {
   const selector = buildProblemSelector(status, severity, zoneName);
-  const response = await problemsClient.getProblems({
-    from,
-    to,
-    pageSize: Math.min(limit, 500),
-    ...(selector ? { problemSelector: selector } : {}),
-  });
+  const response = await problemsClient.getProblems(
+    nextPageKey
+      ? { nextPageKey }
+      : {
+          from,
+          to,
+          pageSize: Math.min(limit, 500),
+          ...(selector ? { problemSelector: selector } : {}),
+        },
+  );
 
   const problems = Array.isArray(response.problems) ? response.problems as Problem[] : [];
   return {
     rows: problems.map(transform),
     totalCount: Number(response.totalCount ?? problems.length),
+    nextPageKey: response.nextPageKey ?? undefined,
   };
 }
 
@@ -166,7 +173,7 @@ export default async function (payload: Payload = {}) {
     ? zones.find((zone) => zone.id === payload.managementZoneId || zone.name === payload.managementZoneId)?.name ?? ''
     : '';
 
-  const result = await getProblems(from, to, status, severity, zoneName, limit);
+  const result = await getProblems(from, to, status, severity, zoneName, limit, payload.nextPageKey);
 
   return {
     rows: result.rows,
@@ -177,5 +184,6 @@ export default async function (payload: Payload = {}) {
     generatedAt: new Date().toISOString(),
     source: 'Dynatrace Problems API v2',
     resultLimit: limit,
+    nextPageKey: result.nextPageKey,
   };
 }
