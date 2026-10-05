@@ -141,16 +141,22 @@ async function getProblems(
   nextPageKey?: string,
 ): Promise<{ rows: Record<string, unknown>[]; totalCount: number; nextPageKey?: string }> {
   const selector = buildProblemSelector(status, severity, zoneName);
-  const response = await problemsClient.getProblems(
-    nextPageKey
-      ? { nextPageKey }
-      : {
-          from,
-          ...(to && to !== 'now' ? { to } : {}),
-          pageSize: Math.min(limit, 100),
-          ...(selector ? { problemSelector: selector } : {}),
-        },
-  );
+  let response;
+  try {
+    response = await problemsClient.getProblems(
+      nextPageKey
+        ? { nextPageKey }
+        : {
+            from,
+            ...(to && to !== 'now' ? { to } : {}),
+            pageSize: Math.min(limit, 100),
+            ...(selector ? { problemSelector: selector } : {}),
+          },
+    );
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Problems API getProblems failed: ${detail}`);
+  }
 
   const problems = Array.isArray(response.problems)
     ? (response.problems as unknown as Problem[])
@@ -181,7 +187,24 @@ export default async function (payload: Payload = {}) {
     ? zones.find((zone) => zone.id === payload.managementZoneId || zone.name === payload.managementZoneId)?.name ?? ''
     : '';
 
-  const result = await getProblems(from, to, status, severity, zoneName, limit, payload.nextPageKey);
+  let result;
+  try {
+    result = await getProblems(from, to, status, severity, zoneName, limit, payload.nextPageKey);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return {
+      rows: [],
+      count: 0,
+      totalCount: 0,
+      managementZones: zones,
+      availableSeverities: ['1', '2', '3', '4', '5'],
+      generatedAt: new Date().toISOString(),
+      source: 'Dynatrace Problems API v2',
+      resultLimit: limit,
+      nextPageKey: undefined,
+      error: detail,
+    };
+  }
 
   return {
     rows: result.rows,
