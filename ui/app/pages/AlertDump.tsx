@@ -24,7 +24,14 @@ const download = (content: string, type: string, name: string) => {
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
-const csvCell = (value: unknown) => `"${text(value).replace(/"/g, '""')}"`;
+const csvCell = (value: unknown) => {
+  const cell = value == null
+    ? ''
+    : typeof value === 'object'
+      ? JSON.stringify(value) ?? ''
+      : String(value);
+  return `"${cell.replace(/"/g, '""')}"`;
+};
 const formatExportTimestamp = (value: unknown): string => {
   if (value == null || value === '') return '';
   const numeric = typeof value === 'number' ? value : (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value) ? Number(value) : NaN);
