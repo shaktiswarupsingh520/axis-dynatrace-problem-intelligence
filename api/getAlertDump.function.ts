@@ -34,6 +34,35 @@ const text = (value: unknown): string => {
   return JSON.stringify(value) ?? '';
 };
 
+const normalizeKey = (value: unknown): string => text(value)
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '');
+
+const appCodeKey = (value: unknown): string => {
+  const normalized = normalizeKey(value);
+  return normalized.replace(/(?:mzal|managementzone|alertingprofile|alertprofile)$/i, '');
+};
+
+function resolveZoneLabel(rawValue: unknown, zones: Zone[]): string {
+  const raw = text(rawValue).trim();
+  if (!raw || raw.toLowerCase() === 'unassigned') return 'Unassigned';
+
+  const rawKey = normalizeKey(raw);
+  const rawAppKey = appCodeKey(raw);
+
+  const exact = zones.find((zone) => normalizeKey(zone.name) === rawKey);
+  if (exact) return exact.name;
+
+  const appMatch = zones.find((zone) => {
+    const zoneKey = normalizeKey(zone.name);
+    const zoneAppKey = appCodeKey(zone.name);
+    return zoneAppKey === rawAppKey || zoneKey === rawKey;
+  });
+  if (appMatch) return appMatch.name;
+
+  return `Alerting Profile / App Code: ${raw}`;
+}
+
 async function loadZones(): Promise<Zone[]> {
   try {
     const zones: Zone[] = [];
@@ -104,9 +133,9 @@ function severityLabel(value: string): string {
   return map[value] ?? value;
 }
 
-function transform(problem: Problem): Record<string, unknown> {
+function transform(problem: Problem, zones: Zone[]): Record<string, unknown> {
   const affected = (problem.affectedEntities ?? []).map((entity) => entity.name || entity.entityId).filter(Boolean);
-  const zones = (problem.managementZones ?? []).map((zone) => zone.name || zone.id).filter(Boolean);
+  const rawZoneValues = (problem.managementZones ?? []).map((zone) => zone.name || zone.id).filter(Boolean);
   const root = problem.rootCauseEntity;
   const rootName = typeof root === 'string' ? root : (root?.name || root?.entityId || '');
 
@@ -126,7 +155,7 @@ function transform(problem: Problem): Record<string, unknown> {
     affected_entity_ids: (problem.affectedEntities ?? []).map((entity) => entity.entityId).filter(Boolean).join('; '),
     root_cause_entity_id: typeof root === 'string' ? root : text(root?.entityId),
     root_cause_entity_name: rootName || 'Not identified',
-    management_zones: zones.length ? zones.join('; ') : 'Unassigned',
+    management_zones: rawZoneValues.length ? rawZoneValues.map((value) => resolveZoneLabel(value, zones)).join('; ') : 'Unassigned',
     'event.description': '',
   };
 }
@@ -138,6 +167,7 @@ async function getProblems(
   severity: string,
   zoneName: string,
   limit: number,
+  zones: Zone[],
   nextPageKey?: string,
 ): Promise<{ rows: Record<string, unknown>[]; totalCount: number; nextPageKey?: string }> {
   const selector = buildProblemSelector(status, severity, zoneName);
@@ -149,7 +179,7 @@ async function getProblems(
         : {
             from,
             ...(to && to !== 'now' && to !== 'now()' ? { to } : {}),
-            pageSize: Math.min(limit, 100),
+            pageSize: Math.min(limit, 500),
             ...(selector ? { problemSelector: selector } : {}),
           },
     );
@@ -164,7 +194,7 @@ async function getProblems(
   return {
     rows: problems.flatMap((problem) => {
       try {
-        return [transform(problem)];
+        return [transform(problem, zones)];
       } catch {
         return [];
       }
@@ -189,7 +219,7 @@ export default async function (payload: Payload = {}) {
 
   let result;
   try {
-    result = await getProblems(from, to, status, severity, zoneName, limit, payload.nextPageKey);
+    result = await getProblems(from, to, status, severity, zoneName, limit, zones, payload.nextPageKey);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     return {
