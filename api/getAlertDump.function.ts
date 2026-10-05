@@ -182,7 +182,7 @@ function buildProblemSelector(status: string, severity: string, zone: string): s
 function dqlTime(value: string): string {
   if (!value) return 'now()';
   if (value === 'now' || value === 'now()') return 'now()';
-  return value.replace(/^now-(\\d+[mhdwMy])$/, 'now()-$1');
+  return value.replace(/^now-(\d+[mhdwMy])$/, 'now()-$1');
 }
 
 async function loadDescriptions(
