@@ -24,6 +24,7 @@ type Problem = {
   affectedEntities?: Array<{ entityId?: string; name?: string; type?: string }>;
   rootCauseEntity?: { entityId?: string; name?: string; type?: string } | string;
   managementZones?: Array<{ id?: string; name?: string }>;
+  problemFilters?: Array<{ id?: string; name?: string }>;
 };
 
 const text = (value: unknown): string => {
@@ -43,15 +44,18 @@ const appCodeKey = (value: unknown): string => {
   return normalized.replace(/(?:mzal|managementzone|alertingprofile|alertprofile)$/i, '');
 };
 
-function resolveZoneLabel(rawValue: unknown, zones: Zone[]): string {
+function resolveZoneLabel(rawValue: unknown, zones: Zone[], profileToZone: Map<string, string>): string {
   const raw = text(rawValue).trim();
   if (!raw || raw.toLowerCase() === 'unassigned') return 'Unassigned';
 
   const rawKey = normalizeKey(raw);
   const rawAppKey = appCodeKey(raw);
 
-  const exact = zones.find((zone) => normalizeKey(zone.name) === rawKey);
+  const exact = zones.find((zone) => normalizeKey(zone.name) === rawKey || normalizeKey(zone.id) === rawKey);
   if (exact) return exact.name;
+
+  const profileZone = profileToZone.get(rawKey);
+  if (profileZone) return profileZone;
 
   const appMatch = zones.find((zone) => {
     const zoneKey = normalizeKey(zone.name);
@@ -61,6 +65,60 @@ function resolveZoneLabel(rawValue: unknown, zones: Zone[]): string {
   if (appMatch) return appMatch.name;
 
   return `Alerting Profile / App Code: ${raw}`;
+}
+
+function findZoneByReference(reference: unknown, zones: Zone[]): string {
+  if (typeof reference === 'string') {
+    const key = normalizeKey(reference);
+    return zones.find((zone) => normalizeKey(zone.name) === key || normalizeKey(zone.id) === key)?.name ?? '';
+  }
+  if (!reference || typeof reference !== 'object') return '';
+  const value = reference as Record<string, unknown>;
+  const direct = [value.name, value.id, value.objectId];
+  for (const item of direct) {
+    const found = findZoneByReference(item, zones);
+    if (found) return found;
+  }
+  for (const key of ['value', 'managementZone', 'reference']) {
+    const found = findZoneByReference(value[key], zones);
+    if (found) return found;
+  }
+  return '';
+}
+
+async function loadAlertingProfileMappings(zones: Zone[]): Promise<Map<string, string>> {
+  const mappings = new Map<string, string>();
+  try {
+    let response = await settingsObjectsClient.getSettingsObjects({
+      schemaIds: 'builtin:alerting.profile',
+      scopes: 'environment',
+      fields: 'objectId,value',
+      pageSize: 500,
+    });
+
+    const collect = (items: unknown) => {
+      if (!Array.isArray(items)) return;
+      for (const item of items) {
+        if (!item || typeof item !== 'object') continue;
+        const record = item as { value?: unknown };
+        if (!record.value || typeof record.value !== 'object') continue;
+        const value = record.value as Record<string, unknown>;
+        const profileName = typeof value.name === 'string' ? value.name.trim() : '';
+        if (!profileName) continue;
+        const zoneName = findZoneByReference(value.managementZone, zones);
+        if (zoneName) mappings.set(normalizeKey(profileName), zoneName);
+      }
+    };
+
+    collect(response.items);
+    for (let page = 0; response.nextPageKey && page < 20; page += 1) {
+      response = await settingsObjectsClient.getSettingsObjects({ nextPageKey: response.nextPageKey });
+      collect(response.items);
+    }
+  } catch {
+    // Alerting-profile metadata is enrichment only; Problems API data remains usable.
+  }
+  return mappings;
 }
 
 async function loadZones(): Promise<Zone[]> {
@@ -133,9 +191,10 @@ function severityLabel(value: string): string {
   return map[value] ?? value;
 }
 
-function transform(problem: Problem, zones: Zone[]): Record<string, unknown> {
+function transform(problem: Problem, zones: Zone[], profileToZone: Map<string, string>): Record<string, unknown> {
   const affected = (problem.affectedEntities ?? []).map((entity) => entity.name || entity.entityId).filter(Boolean);
   const rawZoneValues = (problem.managementZones ?? []).map((zone) => zone.name || zone.id).filter(Boolean);
+  const alertingProfiles = (problem.problemFilters ?? []).map((profile) => profile.name || profile.id).filter(Boolean);
   const root = problem.rootCauseEntity;
   const rootName = typeof root === 'string' ? root : (root?.name || root?.entityId || '');
 
@@ -155,7 +214,8 @@ function transform(problem: Problem, zones: Zone[]): Record<string, unknown> {
     affected_entity_ids: (problem.affectedEntities ?? []).map((entity) => entity.entityId).filter(Boolean).join('; '),
     root_cause_entity_id: typeof root === 'string' ? root : text(root?.entityId),
     root_cause_entity_name: rootName || 'Not identified',
-    management_zones: rawZoneValues.length ? rawZoneValues.map((value) => resolveZoneLabel(value, zones)).join('; ') : 'Unassigned',
+    management_zones: rawZoneValues.length ? rawZoneValues.map((value) => resolveZoneLabel(value, zones, profileToZone)).filter(Boolean).join('; ') : 'Unassigned',
+    alerting_profiles: alertingProfiles.length ? alertingProfiles.join('; ') : 'None',
     'event.description': '',
   };
 }
@@ -168,6 +228,7 @@ async function getProblems(
   zoneName: string,
   limit: number,
   zones: Zone[],
+  profileToZone: Map<string, string>,
   nextPageKey?: string,
 ): Promise<{ rows: Record<string, unknown>[]; totalCount: number; nextPageKey?: string }> {
   const selector = buildProblemSelector(status, severity, zoneName);
@@ -194,7 +255,7 @@ async function getProblems(
   return {
     rows: problems.flatMap((problem) => {
       try {
-        return [transform(problem, zones)];
+        return [transform(problem, zones, profileToZone)];
       } catch {
         return [];
       }
