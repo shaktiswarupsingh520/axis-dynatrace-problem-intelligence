@@ -147,7 +147,7 @@ async function getProblems(
       : {
           from,
           to,
-          pageSize: Math.min(limit, 500),
+          pageSize: Math.min(limit, 100),
           ...(selector ? { problemSelector: selector } : {}),
         },
   );
@@ -156,7 +156,13 @@ async function getProblems(
     ? (response.problems as unknown as Problem[])
     : [];
   return {
-    rows: problems.map(transform),
+    rows: problems.flatMap((problem) => {
+      try {
+        return [transform(problem)];
+      } catch {
+        return [];
+      }
+    }),
     totalCount: Number(response.totalCount ?? problems.length),
     nextPageKey: response.nextPageKey ?? undefined,
   };
