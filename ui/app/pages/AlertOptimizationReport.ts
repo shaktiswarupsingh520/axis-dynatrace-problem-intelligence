@@ -280,7 +280,36 @@ const buildPdf = (report: OptimizationReportInput): Blob => {
   );
 
   section('07', 'Dynatrace Assist Recommendations');
-  para(report.assistAnalysis || report.assistStatus || 'Assist recommendations were not returned. Use the evidence tables above.');
+  const assistSource = report.assistAnalysis || report.assistStatus || 'Assist recommendations were not returned. Use the evidence tables above.';
+  const assistLines = assistSource
+    .replace(/\\r/g, '')
+    .split('\\n')
+    .map(line => line.replace(/^\\s*---+\\s*$/, '').trim())
+    .filter(Boolean);
+  const renderAssist = () => {
+    for (const raw of assistLines) {
+      const line = raw.replace(/^#+\\s*/, '').replace(/^\\*\\*(.*?)\\*\\*$/, '$1').trim();
+      if (!line) continue;
+      const heading = /^\\d+\\.\\s+/.test(line) || /^(Executive Optimization Summary|Repeated \\/ Noisy Alert Patterns|Threshold & Sensitivity Review|Immediate Action Queue|Automation \\/ Routing Opportunities|30-Day Monitoring Governance|Risks, Evidence Gaps & Validation)$/i.test(line);
+      const bullet = /^[-*]\\s+/.test(line);
+      const content = line.replace(/^[-*]\\s+/, '').replace(/^\\d+\\.\\s+/, '');
+      const lines = wrap(content, bullet ? 92 : 100);
+      const leading = heading ? 13 : 10;
+      ensure(lines.length * leading + (heading ? 9 : 4));
+      if (heading) {
+        box(M, y - 15, CW, 18, C.light);
+        txt(content, M + 7, y - 11, 8.2, true, C.navy);
+        y -= 23;
+      } else {
+        for (let i = 0; i < lines.length; i += 1) {
+          txt((bullet ? '• ' : '') + lines[i], M + (bullet ? 7 : 0), y, 7.6, false, C.ink);
+          y -= 10;
+        }
+        y -= 3;
+      }
+    }
+  };
+  renderAssist();
 
   section('08', 'Governance & Validation');
   para('1. Validate the pattern with the application and service owner.  2. Open the current Dynatrace anomaly-detection and alerting configuration.  3. Compare configured sensitivity with observed recurrence, duration and business impact.  4. Approve any change through the normal operational process.  5. Measure alert volume and service impact after the change.');
@@ -337,6 +366,30 @@ export const buildAlertOptimizationEmail = (report: OptimizationReportInput): st
   const threshold = report.thresholdCandidates.slice(0, 10);
   const actions = report.immediateActions.slice(0, 10);
   const divider = (ch = '-', n = 82) => ch.repeat(n);
+
+  const formatAssistForEmail = (source: string) => {
+    const lines = source
+      .replace(/\\r/g, '')
+      .split('\\n')
+      .map(line => line.replace(/^\\s*---+\\s*$/, '').trim())
+      .filter(Boolean);
+    const out: string[] = [];
+    for (const raw of lines) {
+      const line = raw.replace(/^#+\\s*/, '').trim();
+      if (/^[-*]\\s+/.test(line)) {
+        out.push('  • ' + line.replace(/^[-*]\\s+/, '').replace(/\\*\\*/g, ''));
+      } else if (/^\\d+\\.\\s+/.test(line)) {
+        out.push('');
+        out.push(line.replace(/\\*\\*/g, ''));
+      } else if (/^\\*\\*.*\\*\\*$/.test(line)) {
+        out.push('');
+        out.push(line.replace(/^\\*\\*|\\*\\*$/g, ''));
+      } else {
+        out.push(line.replace(/\\*\\*/g, ''));
+      }
+    }
+    return out.join('\\n').replace(/\\n{3,}/g, '\\n\\n').trim();
+  };
 
   const asciiTable = (headers: string[], rows: string[][]) => {
     const widths = headers.map((h, i) => Math.min(34, Math.max(h.length, ...rows.map(r => (r[i] || '').length))));
@@ -398,7 +451,7 @@ export const buildAlertOptimizationEmail = (report: OptimizationReportInput): st
     asciiTable(['Pattern', 'Status', 'Occ.', 'Avg', 'Impacted services'], actionRows.length ? actionRows : [['None detected', '-', '0', '-', '-']]),
     '',
     'DYNATRACE ASSIST RECOMMENDATIONS',
-    emailClip(report.assistAnalysis || report.assistStatus || 'Assist recommendations were not returned.', 3000),
+    formatAssistForEmail(report.assistAnalysis || report.assistStatus || 'Assist recommendations were not returned.'),
     '',
     'GOVERNANCE',
     'Validate proposed threshold, sensitivity, suppression or routing changes with the application/service owner before production change. Measure alert volume and service impact after approval.',
