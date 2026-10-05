@@ -137,7 +137,7 @@ export default async function (payload: Payload = {}) {
   const severity = payload.severity ?? 'ALL';
   const zone = payload.managementZoneId && payload.managementZoneId !== 'ALL' ? payload.managementZoneId : '';
   const requestedLimit = Number(payload.limit ?? 50000);
-  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 100000) : 50000;
+  const limit = Number.isFinite(requestedLimit) ? Math.min(Math.max(Math.floor(requestedLimit), 1), 50000) : 50000;
   const [problemRows, managementZones] = await Promise.all([
     dql(buildQuery(from, to, status, severity, zone, limit), limit),
     loadZones(),
