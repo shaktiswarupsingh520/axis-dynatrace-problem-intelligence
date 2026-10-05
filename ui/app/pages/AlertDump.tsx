@@ -36,7 +36,7 @@ const displayTimestamp = (value: unknown): string => formatExportTimestamp(value
 const rowToCsv = (row: Row) => [
   row.display_id, row['event.name'], row['event.status'], row['event.severity'], row['event.category'],
   row['dt.davis.impact_level'], formatExportTimestamp(row['event.start']), formatExportTimestamp(row['event.end']),
-  row['problem.duration'], row.affected_entity_names, row.management_zones, row.root_cause_entity_name, row['event.description'],
+  row['problem.duration'], row.affected_entity_names, row.management_zones, row.alerting_profiles, row.root_cause_entity_name, row['event.description'],
 ].map(csvCell).join(',');
 const buttonStyle: React.CSSProperties = { height: 36, padding: '0 13px', border: '1px solid #b8c7d8', borderRadius: 7, background: '#ffffff', color: '#172334', fontWeight: 700, cursor: 'pointer' };
 const selectStyle: React.CSSProperties = { height: 36, minWidth: 145, border: '1px solid #aebed0', borderRadius: 7, background: '#ffffff', color: '#172334', padding: '0 9px', fontSize: 12 };
@@ -111,7 +111,7 @@ export const AlertDump = () => {
   const visible = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const exportCurrent = () => {
-    const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Management Zones','Root Cause Entity','Description'];
+    const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Management Zones','Alerting Profiles / App Code','Root Cause Entity','Description'];
     const content = '\uFEFF' + [columns.map(csvCell).join(','), ...rows.map(rowToCsv)].join('\r\n');
     download(content, 'text/csv;charset=utf-8', `dynatrace-alert-dump-${range}.csv`);
   };
@@ -157,7 +157,7 @@ export const AlertDump = () => {
         const id = text(row.display_id);
         if (id && !unique.has(id)) unique.set(id, row);
       }
-      const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Management Zones','Root Cause Entity','Description'];
+      const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Management Zones','Alerting Profiles / App Code','Root Cause Entity','Description'];
       const chunks = [columns.map(csvCell).join(',')];
       let index = 0;
       for (const row of unique.values()) {
@@ -246,15 +246,15 @@ export const AlertDump = () => {
       </div>
 
       <div style={{ margin: '0 26px', border: '1px solid #d5dfe9', borderRadius: 9, overflow: 'auto', maxHeight: 'calc(100vh - 360px)', minHeight: 300 }}>
-        <table style={{ width: '100%', minWidth: 1650, borderCollapse: 'collapse', background: '#ffffff', fontSize: 11 }}>
-          <thead><tr>{['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Management Zones','Root Cause Entity','Description'].map((head) => <th key={head} style={th}>{head}</th>)}</tr></thead>
+        <table style={{ width: '100%', minWidth: 1850, borderCollapse: 'collapse', background: '#ffffff', fontSize: 11 }}>
+          <thead><tr>{['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Management Zones','Alerting Profiles / App Code','Root Cause Entity','Description'].map((head) => <th key={head} style={th}>{head}</th>)}</tr></thead>
           <tbody>{visible.length ? visible.map((row, index) => <tr key={`${text(row.display_id)}-${index}`} style={{ background: index % 2 ? '#fbfcfd' : '#ffffff' }}>
             <td style={{ ...td, color: '#174a7e', fontWeight: 800 }}>{text(row.display_id)}</td>
             <td style={td}>{text(row['event.name']) || '—'}</td><td style={td}>{text(row['event.status']) || '—'}</td><td style={td}>{text(row['event.severity']) || '—'}</td>
             <td style={td}>{text(row['event.category']) || '—'}</td><td style={td}>{text(row['dt.davis.impact_level']) || '—'}</td><td style={td}>{displayTimestamp(row['event.start']) || '—'}</td>
             <td style={td}>{displayTimestamp(row['event.end']) || '—'}</td><td style={td}>{text(row['problem.duration']) || '—'}</td><td style={td}>{text(row.affected_entity_names) || '—'}</td>
-            <td style={{ ...td, maxWidth: 240, whiteSpace: 'normal' }}>{text(row.management_zones) || 'Unassigned'}</td><td style={td}>{text(row.root_cause_entity_name) || 'Not identified'}</td><td style={{ ...td, maxWidth: 420, whiteSpace: 'normal' }}>{text(row['event.description']) || '—'}</td>
-          </tr>) : <tr><td colSpan={13} style={{ ...td, textAlign: 'center', padding: 42, color: '#52657a' }}>{loading ? 'Reading live Dynatrace problems…' : 'No problems matched the selected filters.'}</td></tr>}</tbody>
+            <td style={{ ...td, maxWidth: 240, whiteSpace: 'normal' }}>{text(row.management_zones) || 'Unassigned'}</td><td style={{ ...td, maxWidth: 300, whiteSpace: 'normal' }}>{text(row.alerting_profiles) || 'None'}</td><td style={td}>{text(row.root_cause_entity_name) || 'Not identified'}</td><td style={{ ...td, maxWidth: 420, whiteSpace: 'normal' }}>{text(row['event.description']) || '—'}</td>
+          </tr>) : <tr><td colSpan={14} style={{ ...td, textAlign: 'center', padding: 42, color: '#52657a' }}>{loading ? 'Reading live Dynatrace problems…' : 'No problems matched the selected filters.'}</td></tr>}</tbody>
         </table>
       </div>
       <footer style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 26px', color: '#40566d' }}>
