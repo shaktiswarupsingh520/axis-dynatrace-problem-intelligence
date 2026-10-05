@@ -290,7 +290,7 @@ const buildPdf = (report: OptimizationReportInput): Blob => {
     for (const raw of assistLines) {
       const line = raw.replace(/^#+\\s*/, '').replace(/^\\*\\*(.*?)\\*\\*$/, '$1').trim();
       if (!line) continue;
-      const heading = /^\\d+\\.\\s+/.test(line) || /^(Executive Optimization Summary|Repeated \\/ Noisy Alert Patterns|Threshold & Sensitivity Review|Immediate Action Queue|Automation \\/ Routing Opportunities|30-Day Monitoring Governance|Risks, Evidence Gaps & Validation)$/i.test(line);
+      const heading = /^\\d+\\.\\s+/.test(line) || /^(Executive Optimization Summary|Repeated \\x2F Noisy Alert Patterns|Threshold & Sensitivity Review|Immediate Action Queue|Automation \\x2F Routing Opportunities|30-Day Monitoring Governance|Risks, Evidence Gaps & Validation)$/i.test(line);
       const bullet = /^[-*]\\s+/.test(line);
       const content = line.replace(/^[-*]\\s+/, '').replace(/^\\d+\\.\\s+/, '');
       const lines = wrap(content, bullet ? 92 : 100);
