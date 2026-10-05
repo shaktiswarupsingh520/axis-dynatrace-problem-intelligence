@@ -60,6 +60,7 @@ export const AlertDump = () => {
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingNextPage, setLoadingNextPage] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summary, setSummary] = useState<MzResponse | null>(null);
   const [error, setError] = useState('');
@@ -109,10 +110,47 @@ export const AlertDump = () => {
   const currentPage = Math.min(page, pageCount);
   const visible = rows.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  const exportCurrent = () => {
-    const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Management Zones','Alerting Profiles / App Code','Root Cause Entity','Description'];
-    const content = '\uFEFF' + [columns.map(csvCell).join(','), ...rows.map(rowToCsv)].join('\r\n');
-    download(content, 'text/csv;charset=utf-8', `dynatrace-alert-dump-${range}.csv`);
+  const exportCurrent = async () => {
+    if (exporting) return;
+    setExporting(true);
+    setError('');
+    try {
+      const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Management Zones','Alerting Profiles / App Code','Root Cause Entity','Description'];
+      const csvParts: string[] = [columns.map(csvCell).join(',')];
+      let nextPageKey: string | undefined;
+      let exportedCount = 0;
+      let firstPage = true;
+
+      do {
+        const requestBody: Record<string, unknown> = firstPage
+          ? {
+              from: `now-${range}`,
+              to: 'now',
+              status,
+              severity,
+              managementZoneId: zoneId,
+              limit: 500,
+            }
+          : { nextPageKey };
+
+        const body = await postJson<Response>('/api/getAlertDump', requestBody);
+        if (body.error) throw new Error(body.error);
+        if (body.rows?.length) {
+          csvParts.push(...body.rows.map(rowToCsv));
+          exportedCount += body.rows.length;
+        }
+        nextPageKey = body.nextPageKey;
+        firstPage = false;
+        setError(`Preparing CSV… ${exportedCount.toLocaleString()} records collected`);
+      } while (nextPageKey);
+
+      download('\uFEFF' + csvParts.join('\r\n'), 'text/csv;charset=utf-8', `dynatrace-alert-dump-${range}.csv`);
+      setError(`CSV downloaded successfully: ${exportedCount.toLocaleString()} records.`);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'Unable to export the Alert Dump CSV.');
+    } finally {
+      setExporting(false);
+    }
   };
 
   const loadNextApiPage = async () => {
@@ -199,7 +237,7 @@ export const AlertDump = () => {
           </div>}
         </div>
         <button type="button" style={{ ...buttonStyle, background: '#174a7e', color: '#ffffff', borderColor: '#174a7e' }} onClick={() => void load()} disabled={loading}>{loading ? 'Loading…' : 'Load problems'}</button>
-        <button type="button" style={buttonStyle} onClick={exportCurrent} disabled={!rows.length}>Download Current CSV</button>
+        <button type="button" style={buttonStyle} onClick={() => void exportCurrent()} disabled={exporting}>{exporting ? 'Preparing CSV…' : 'Download Current CSV'}</button>
         <button type="button" style={buttonStyle} onClick={() => navigate('/')}>Back to Problems</button>
       </div>
 
