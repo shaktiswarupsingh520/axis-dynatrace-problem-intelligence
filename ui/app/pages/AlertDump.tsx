@@ -59,8 +59,7 @@ export const AlertDump = () => {
   const [zoneOpen, setZoneOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState('');
+  const [loadingNextPage, setLoadingNextPage] = useState(false);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summary, setSummary] = useState<MzResponse | null>(null);
   const [error, setError] = useState('');
@@ -116,61 +115,31 @@ export const AlertDump = () => {
     download(content, 'text/csv;charset=utf-8', `dynatrace-alert-dump-${range}.csv`);
   };
 
-  const fetchWindow = async (olderDays: number, newerDays: number): Promise<Row[]> => {
-    const rows: Row[] = [];
-    let nextPageKey: string | undefined;
-    const maxRowsPerWindow = 50000;
-    do {
-      const body = await postJson<Response>('/api/getAlertDump', nextPageKey
-        ? { nextPageKey }
-        : {
-            from: `now()-${olderDays}d`,
-            to: newerDays === 0 ? 'now()' : `now()-${newerDays}d`,
-            status,
-            severity,
-            managementZoneId: zoneId,
-            limit: 500,
-          });
-      rows.push(...body.rows);
-      nextPageKey = body.nextPageKey;
-      if (rows.length >= maxRowsPerWindow) break;
-    } while (nextPageKey);
-    return rows;
-  };
-
-  const collectFullYear = async (olderDays: number, newerDays: number): Promise<Row[]> => {
-    const rowsInWindow = await fetchWindow(olderDays, newerDays);
-    if (rowsInWindow.length < 50000 || olderDays - newerDays <= 1) return rowsInWindow;
-    const middle = Math.floor((olderDays + newerDays) / 2);
-    const left = await collectFullYear(olderDays, middle);
-    const right = await collectFullYear(middle, newerDays);
-    return [...left, ...right];
-  };
-
-  const downloadFullYear = async () => {
-    if (exporting) return;
-    setExporting(true); setExportProgress('Preparing 1-year alert dump…'); setError('');
+  const loadNextApiPage = async () => {
+    if (!data?.nextPageKey || loadingNextPage) return;
+    setLoadingNextPage(true);
+    setError('');
     try {
-      const allRows = await collectFullYear(365, 0);
-      const unique = new Map<string, Row>();
-      for (const row of allRows) {
-        const id = text(row.display_id);
-        if (id && !unique.has(id)) unique.set(id, row);
-      }
-      const columns = ['Problem ID','Title','Status','Severity','Category','Impact Level','Start Time','End Time','Duration','Affected Entities','Management Zones','Alerting Profiles / App Code','Root Cause Entity','Description'];
-      const chunks = [columns.map(csvCell).join(',')];
-      let index = 0;
-      for (const row of unique.values()) {
-        chunks.push(rowToCsv(row));
-        index += 1;
-        if (index % 5000 === 0) setExportProgress(`Preparing ${index.toLocaleString()} alerts…`);
-      }
-      download('\uFEFF' + chunks.join('\r\n'), 'text/csv;charset=utf-8', 'dynatrace-alert-dump-last-1-year.csv');
-      setExportProgress(`Completed: ${unique.size.toLocaleString()} unique alerts`);
+      const body = await postJson<Response>('/api/getAlertDump', {
+        nextPageKey: data.nextPageKey,
+        from: `now-${range}`,
+        to: 'now',
+      });
+      if (body.error) throw new Error(body.error);
+      setData((previous) => previous ? {
+        ...previous,
+        rows: [...previous.rows, ...body.rows],
+        count: previous.rows.length + body.rows.length,
+        totalCount: body.totalCount ?? previous.totalCount,
+        nextPageKey: body.nextPageKey,
+        generatedAt: body.generatedAt,
+      } : body);
+      setPage((previous) => previous + 1);
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : 'Unable to prepare the 1-year Alert Dump.');
-      setExportProgress('');
-    } finally { setExporting(false); }
+      setError(cause instanceof Error ? cause.message : 'Unable to load the next Alert Dump page.');
+    } finally {
+      setLoadingNextPage(false);
+    }
   };
 
   const downloadMzSummary = () => {
@@ -231,17 +200,13 @@ export const AlertDump = () => {
         </div>
         <button type="button" style={{ ...buttonStyle, background: '#174a7e', color: '#ffffff', borderColor: '#174a7e' }} onClick={() => void load()} disabled={loading}>{loading ? 'Loading…' : 'Load problems'}</button>
         <button type="button" style={buttonStyle} onClick={exportCurrent} disabled={!rows.length}>Download Current CSV</button>
-        <button type="button" style={{ ...buttonStyle, background: '#0b6e4f', color: '#ffffff', borderColor: '#0b6e4f' }} onClick={() => void downloadFullYear()} disabled={exporting}>
-          {exporting ? 'Building 1-Year Dump…' : 'Download Full 1-Year Dump'}
-        </button>
         <button type="button" style={buttonStyle} onClick={() => navigate('/')}>Back to Problems</button>
       </div>
 
-      {exportProgress && <div style={{ margin: '12px 26px 0', padding: 10, background: '#eef7f3', border: '1px solid #c8e5d8', borderRadius: 8, color: '#176342', fontSize: 12 }}>{exportProgress}</div>}
       {error && <div style={{ margin: '14px 26px 0', padding: 11, color: '#8d211a', background: '#fff2f0', border: '1px solid #efc1bc', borderRadius: 8, fontSize: 12 }}>{error}</div>}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', padding: '13px 26px', color: '#40566d', fontSize: 12 }}>
-        <span><strong style={{ color: '#172334' }}>{rows.length.toLocaleString()}</strong> problems loaded · page {currentPage} of {pageCount}{data?.resultLimit ? ` · query chunk limit ${data.resultLimit.toLocaleString()}` : ''}</span>
+        <span><strong style={{ color: '#172334' }}>{rows.length.toLocaleString()}</strong> problems loaded · table page {currentPage} of {pageCount}{data?.resultLimit ? ` · ${data.resultLimit.toLocaleString()} per API page` : ''}{data?.nextPageKey ? ' · more available' : ''}</span>
         <span>{data?.generatedAt ? new Date(data.generatedAt).toLocaleString() : ''}</span>
       </div>
 
@@ -259,8 +224,11 @@ export const AlertDump = () => {
       </div>
       <footer style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 26px', color: '#40566d' }}>
         <button type="button" style={buttonStyle} disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</button>
-        <span style={{ fontSize: 12 }}>Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, rows.length)} of {rows.length}</span>
-        <button type="button" style={buttonStyle} disabled={currentPage >= pageCount} onClick={() => setPage((p) => Math.min(pageCount, p + 1))}>Next</button>
+        <span style={{ fontSize: 12 }}>Showing {rows.length ? (currentPage - 1) * pageSize + 1 : 0}–{Math.min(currentPage * pageSize, rows.length)} of {rows.length}{data?.totalCount ? ` · ${data.totalCount.toLocaleString()} total matching` : ''}</span>
+        <button type="button" style={buttonStyle} disabled={loadingNextPage || (currentPage >= pageCount && !data?.nextPageKey)} onClick={() => {
+          if (currentPage < pageCount) setPage((p) => p + 1);
+          else void loadNextApiPage();
+        }}>{loadingNextPage ? 'Loading…' : 'Next'}</button>
       </footer>
 
       <section style={{ margin: '18px 26px 26px', border: '1px solid #d5dfe9', borderRadius: 10, overflow: 'hidden', background: '#fbfcfd' }}>
