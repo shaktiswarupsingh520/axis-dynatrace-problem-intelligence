@@ -31,6 +31,8 @@ const formatExportTimestamp = (value: unknown): string => {
   const date = Number.isFinite(numeric) ? new Date(numeric > 1e12 ? numeric : numeric * 1000) : new Date(String(value).replace(/^"|"$/g, ''));
   return Number.isNaN(date.getTime()) ? text(value) : date.toLocaleString('en-IN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 };
+const displayTimestamp = (value: unknown): string => formatExportTimestamp(value);
+
 const rowToCsv = (row: Row) => [
   row.display_id, row['event.name'], row['event.status'], row['event.severity'], row['event.category'],
   row['dt.davis.impact_level'], formatExportTimestamp(row['event.start']), formatExportTimestamp(row['event.end']),
@@ -70,7 +72,7 @@ export const AlertDump = () => {
     setLoading(true); setError('');
     try {
       const body = await postJson<Response>('/api/getAlertDump', {
-        from: `now-${nextRange}`, to: 'now()', status: nextStatus, severity: nextSeverity,
+        from: `now-${nextRange}`, to: 'now', status: nextStatus, severity: nextSeverity,
         managementZoneId: nextZone, limit: 500,
       });
       if (body.error) throw new Error(body.error);
@@ -249,8 +251,8 @@ export const AlertDump = () => {
           <tbody>{visible.length ? visible.map((row, index) => <tr key={`${text(row.display_id)}-${index}`} style={{ background: index % 2 ? '#fbfcfd' : '#ffffff' }}>
             <td style={{ ...td, color: '#174a7e', fontWeight: 800 }}>{text(row.display_id)}</td>
             <td style={td}>{text(row['event.name']) || '—'}</td><td style={td}>{text(row['event.status']) || '—'}</td><td style={td}>{text(row['event.severity']) || '—'}</td>
-            <td style={td}>{text(row['event.category']) || '—'}</td><td style={td}>{text(row['dt.davis.impact_level']) || '—'}</td><td style={td}>{text(row['event.start']) || '—'}</td>
-            <td style={td}>{text(row['event.end']) || '—'}</td><td style={td}>{text(row['problem.duration']) || '—'}</td><td style={td}>{text(row.affected_entity_names) || '—'}</td>
+            <td style={td}>{text(row['event.category']) || '—'}</td><td style={td}>{text(row['dt.davis.impact_level']) || '—'}</td><td style={td}>{displayTimestamp(row['event.start']) || '—'}</td>
+            <td style={td}>{displayTimestamp(row['event.end']) || '—'}</td><td style={td}>{text(row['problem.duration']) || '—'}</td><td style={td}>{text(row.affected_entity_names) || '—'}</td>
             <td style={{ ...td, maxWidth: 240, whiteSpace: 'normal' }}>{text(row.management_zones) || 'Unassigned'}</td><td style={td}>{text(row.root_cause_entity_name) || 'Not identified'}</td><td style={{ ...td, maxWidth: 420, whiteSpace: 'normal' }}>{text(row['event.description']) || '—'}</td>
           </tr>) : <tr><td colSpan={13} style={{ ...td, textAlign: 'center', padding: 42, color: '#52657a' }}>{loading ? 'Reading live Dynatrace problems…' : 'No problems matched the selected filters.'}</td></tr>}</tbody>
         </table>
