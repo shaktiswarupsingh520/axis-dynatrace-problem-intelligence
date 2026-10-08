@@ -27,6 +27,11 @@ type ProblemRow = {
   managementZones?: Array<{ id?: string; name?: string }>;
 };
 
+type EntityConfiguration = {
+  entity: { id: string; type: string; name: string };
+  config: ThresholdConfiguration;
+};
+
 type ThresholdConfiguration = {
   available: boolean;
   category: 'failureRate' | 'responseTime' | 'loadDrop' | 'loadSpike' | 'unknown';
@@ -45,6 +50,12 @@ type ThresholdConfiguration = {
   sensitivity?: string;
   source?: string;
   note?: string;
+  candidateEntityCount?: number;
+  resolvedEntityCount?: number;
+  configurationVariantCount?: number;
+  configurationCoverage?: 'all' | 'partial' | 'none';
+  resolvedEntity?: { id: string; type: string; name: string };
+  entityConfigurations?: EntityConfiguration[];
 };
 
 const text = (v: unknown): string => {
@@ -325,11 +336,35 @@ export default async function (payload: Payload) {
     .slice(0, 15);
 
   const classifyThresholdCategory = (title: string): ThresholdConfiguration['category'] => {
-    const normalized = title.toLowerCase();
-    if (normalized.includes('failure rate') || normalized.includes('failure-rate') || normalized.includes('failure rate increase')) return 'failureRate';
-    if (normalized.includes('response time') || normalized.includes('response-time') || normalized.includes('response time degradation')) return 'responseTime';
-    if (normalized.includes('load drop') || normalized.includes('load-drop')) return 'loadDrop';
-    if (normalized.includes('load spike') || normalized.includes('load-spike')) return 'loadSpike';
+    const normalized = title.toLowerCase().replace(/[–—]/g, '-');
+    if (
+      normalized.includes('failure rate') ||
+      normalized.includes('failure-rate') ||
+      normalized.includes('failure rate increase') ||
+      normalized.includes('failed service call') ||
+      normalized.includes('service call failure')
+    ) return 'failureRate';
+    if (
+      normalized.includes('response time') ||
+      normalized.includes('response-time') ||
+      normalized.includes('response time degradation') ||
+      normalized.includes('latency degradation') ||
+      normalized.includes('latency increase')
+    ) return 'responseTime';
+    if (
+      normalized.includes('load drop') ||
+      normalized.includes('load-drop') ||
+      normalized.includes('load decrease') ||
+      normalized.includes('traffic drop') ||
+      normalized.includes('traffic decrease')
+    ) return 'loadDrop';
+    if (
+      normalized.includes('load spike') ||
+      normalized.includes('load-spike') ||
+      normalized.includes('load increase') ||
+      normalized.includes('traffic spike') ||
+      normalized.includes('traffic increase')
+    ) return 'loadSpike';
     return 'unknown';
   };
 
@@ -431,6 +466,23 @@ export default async function (payload: Payload) {
 
   const candidateConfigurationCache = new Map<string, ThresholdConfiguration>();
 
+  const configurationFingerprint = (config: ThresholdConfiguration): string => JSON.stringify({
+    category: config.category,
+    enabled: config.enabled,
+    detectionMode: config.detectionMode,
+    threshold: config.threshold,
+    absoluteIncrease: config.absoluteIncrease,
+    relativeIncrease: config.relativeIncrease,
+    responseTimeMilliseconds: config.responseTimeMilliseconds,
+    responseTimePercent: config.responseTimePercent,
+    slowestResponseTimeMilliseconds: config.slowestResponseTimeMilliseconds,
+    slowestResponseTimePercent: config.slowestResponseTimePercent,
+    loadPercent: config.loadPercent,
+    requestsPerMinute: config.requestsPerMinute,
+    minutesAbnormalState: config.minutesAbnormalState,
+    sensitivity: config.sensitivity,
+  });
+
   const readCandidateConfiguration = async (
     candidate: typeof patterns[number],
   ): Promise<ThresholdConfiguration> => {
@@ -439,7 +491,11 @@ export default async function (payload: Payload) {
       return {
         available: false,
         category,
-        note: 'The candidate title could not be mapped to a supported service anomaly-detection category.',
+        candidateEntityCount: candidate.configurationEntities?.length ?? 0,
+        resolvedEntityCount: 0,
+        configurationVariantCount: 0,
+        configurationCoverage: 'none',
+        note: 'The candidate title could not be mapped to a supported service anomaly-detection category. Other alerting schemas are not yet resolved here.',
       };
     }
 
@@ -448,6 +504,10 @@ export default async function (payload: Payload) {
       return {
         available: false,
         category,
+        candidateEntityCount: 0,
+        resolvedEntityCount: 0,
+        configurationVariantCount: 0,
+        configurationCoverage: 'none',
         note: 'No SERVICE or SERVICE_METHOD entity ID was returned with this problem pattern, so the effective alert configuration cannot be resolved.',
       };
     }
@@ -467,11 +527,37 @@ export default async function (payload: Payload) {
       })),
     );
 
-    const available = results.find(result => result.config.available);
-    if (available) {
-      const resolved = {
-        ...available.config,
-        source: `${available.config.source ?? 'Dynatrace effective anomaly-detection.services configuration'}; entity: ${available.entity.name || available.entity.id}`,
+    const resolvedResults = results.filter(result => result.config.available);
+    const fingerprints = [...new Set(resolvedResults.map(result => configurationFingerprint(result.config)))];
+    const candidateEntityCount = entities.length;
+    const resolvedEntityCount = resolvedResults.length;
+    const configurationVariantCount = fingerprints.length;
+    const configurationCoverage =
+      resolvedEntityCount === 0
+        ? 'none'
+        : resolvedEntityCount === candidateEntityCount
+          ? 'all'
+          : 'partial';
+
+    if (resolvedResults.length) {
+      const representative = resolvedResults[0];
+      const entityConfigurations: EntityConfiguration[] = resolvedResults.map(result => ({
+        entity: result.entity,
+        config: result.config,
+      }));
+
+      const resolved: ThresholdConfiguration = {
+        ...representative.config,
+        source: 'Dynatrace effective anomaly-detection.services configuration; representative entity only',
+        candidateEntityCount,
+        resolvedEntityCount,
+        configurationVariantCount,
+        configurationCoverage,
+        resolvedEntity: representative.entity,
+        entityConfigurations,
+        note: configurationVariantCount > 1
+          ? 'Different effective configurations were returned across the resolved entities. The displayed values are representative only; review entity-level configurations before changing alert settings.'
+          : 'Effective values are evaluated at each entity scope and may be inherited from a broader Dynatrace settings scope.',
       };
       candidateConfigurationCache.set(cacheKey, resolved);
       return resolved;
@@ -481,6 +567,10 @@ export default async function (payload: Payload) {
     const unavailable: ThresholdConfiguration = {
       available: false,
       category,
+      candidateEntityCount,
+      resolvedEntityCount: 0,
+      configurationVariantCount: 0,
+      configurationCoverage: 'none',
       note: firstNote || 'Dynatrace did not return an effective configuration for the candidate entities.',
     };
     candidateConfigurationCache.set(cacheKey, unavailable);
