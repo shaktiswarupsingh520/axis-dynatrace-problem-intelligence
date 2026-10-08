@@ -10,7 +10,7 @@ type EntityConfiguration = {
 };
 type ThresholdConfiguration = {
   available: boolean;
-  category: 'failureRate' | 'responseTime' | 'loadDrop' | 'loadSpike' | 'unknown';
+  category: 'failureRate' | 'responseTime' | 'loadDrop' | 'loadSpike' | 'metricEvent' | 'processAvailability' | 'unknown';
   enabled?: boolean;
   detectionMode?: 'auto' | 'fixed';
   threshold?: number;
@@ -30,6 +30,7 @@ type ThresholdConfiguration = {
   resolvedEntityCount?: number;
   configurationVariantCount?: number;
   configurationCoverage?: 'all' | 'partial' | 'none';
+  configurationScope?: string;
   resolvedEntity?: { id: string; type: string; name: string };
   entityConfigurations?: EntityConfiguration[];
 };
@@ -299,14 +300,18 @@ export const AlertOptimizationPlan = () => {
                         </div>
                         <div>
                           <span>Category</span>
-                          <strong>{selectedThresholdCandidate.thresholdConfiguration.category === 'failureRate' ? 'Failure rate' : selectedThresholdCandidate.thresholdConfiguration.category === 'responseTime' ? 'Response time' : selectedThresholdCandidate.thresholdConfiguration.category === 'loadDrop' ? 'Load drop' : selectedThresholdCandidate.thresholdConfiguration.category === 'loadSpike' ? 'Load spike' : 'Other'}</strong>
+                          <strong>{selectedThresholdCandidate.thresholdConfiguration.category === 'failureRate' ? 'Failure rate' : selectedThresholdCandidate.thresholdConfiguration.category === 'responseTime' ? 'Response time' : selectedThresholdCandidate.thresholdConfiguration.category === 'loadDrop' ? 'Load drop' : selectedThresholdCandidate.thresholdConfiguration.category === 'loadSpike' ? 'Load spike' : selectedThresholdCandidate.thresholdConfiguration.category === 'metricEvent' ? 'Custom alert / metric event' : selectedThresholdCandidate.thresholdConfiguration.category === 'processAvailability' ? 'Process availability' : 'Other'}</strong>
                         </div>
                       </div>
 
                       <div className="aop-threshold-coverage">
-                        <div><span>Configuration coverage</span><strong>{selectedThresholdCandidate.thresholdConfiguration.resolvedEntityCount ?? 0} / {selectedThresholdCandidate.thresholdConfiguration.candidateEntityCount ?? 0} entities</strong></div>
-                        <div><span>Configuration consistency</span><strong>{selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount === 1 ? "Same configuration across resolved entities" : String(selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount ?? 0) + " configuration variants"}</strong></div>
-                        <div><span>Configuration scope</span><strong>Effective at entity scope; inheritance may apply</strong></div>
+                        <div><span>Configuration coverage</span><strong>{selectedThresholdCandidate.thresholdConfiguration.category === 'metricEvent' || selectedThresholdCandidate.thresholdConfiguration.category === 'processAvailability'
+                          ? 'Configuration matched'
+                          : (selectedThresholdCandidate.thresholdConfiguration.resolvedEntityCount ?? 0) + ' / ' + (selectedThresholdCandidate.thresholdConfiguration.candidateEntityCount ?? 0) + ' entities'}</strong></div>
+                        <div><span>Configuration consistency</span><strong>{selectedThresholdCandidate.thresholdConfiguration.category === 'metricEvent' || selectedThresholdCandidate.thresholdConfiguration.category === 'processAvailability'
+                          ? 'Native alert configuration'
+                          : selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount === 1 ? "Same configuration across resolved entities" : String(selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount ?? 0) + " configuration variants"}</strong></div>
+                        <div><span>Configuration scope</span><strong>{selectedThresholdCandidate.thresholdConfiguration.configurationScope || 'Effective at entity scope; inheritance may apply'}</strong></div>
                       </div>
 
                       {selectedThresholdCandidate.thresholdConfiguration.category === 'failureRate' && (
@@ -334,6 +339,21 @@ export const AlertOptimizationPlan = () => {
                           <div><span>Minimum requests/min</span><strong>{selectedThresholdCandidate.thresholdConfiguration.requestsPerMinute ?? '—'}</strong></div>
                           <div><span>Abnormal state duration</span><strong>{selectedThresholdCandidate.thresholdConfiguration.minutesAbnormalState ?? '—'} min</strong></div>
                           {selectedThresholdCandidate.thresholdConfiguration.sensitivity && <div><span>Sensitivity</span><strong>{selectedThresholdCandidate.thresholdConfiguration.sensitivity}</strong></div>}
+                        </div>
+                      )}
+
+                      {selectedThresholdCandidate.thresholdConfiguration.category === 'metricEvent' && (
+                        <div className="aop-threshold-values">
+                          <div><span>Detection strategy</span><strong>{selectedThresholdCandidate.thresholdConfiguration.detectionMode === 'fixed' ? 'Static threshold' : 'Adaptive / baseline-based'}</strong></div>
+                          <div><span>Configured threshold</span><strong>{selectedThresholdCandidate.thresholdConfiguration.threshold ?? '—'}</strong></div>
+                          {selectedThresholdCandidate.thresholdConfiguration.minutesAbnormalState !== undefined && <div><span>Evaluation window</span><strong>{selectedThresholdCandidate.thresholdConfiguration.minutesAbnormalState} minute samples</strong></div>}
+                        </div>
+                      )}
+
+                      {selectedThresholdCandidate.thresholdConfiguration.category === 'processAvailability' && (
+                        <div className="aop-threshold-values">
+                          <div><span>Minimum matching processes</span><strong>{selectedThresholdCandidate.thresholdConfiguration.threshold ?? '—'}</strong></div>
+                          <div><span>Alert condition</span><strong>Alert when the configured minimum is not met</strong></div>
                         </div>
                       )}
 
@@ -387,7 +407,7 @@ export const AlertOptimizationPlan = () => {
                         </div>
                       )}
 
-                      <small className="aop-threshold-source">{selectedThresholdCandidate.thresholdConfiguration.source}</small>
+                      <small className="aop-threshold-source">{selectedThresholdCandidate.thresholdConfiguration.source}{selectedThresholdCandidate.thresholdConfiguration.note ? ' — ' + selectedThresholdCandidate.thresholdConfiguration.note : ''}</small>
                     </div>
                   ) : (
                     <div className="aop-threshold-unavailable">
