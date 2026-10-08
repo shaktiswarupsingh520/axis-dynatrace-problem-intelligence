@@ -51,7 +51,7 @@ async function postJson<T>(url: string, body: Record<string, unknown>): Promise<
 
 export const AlertDump = () => {
   const navigate = useNavigate();
-  const [range, setRange] = useState('24h');
+  const [range, setRange] = useState('1y');
   const [status, setStatus] = useState('ALL');
   const [severity, setSeverity] = useState('ALL');
   const [zoneId, setZoneId] = useState('ALL');
