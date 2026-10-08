@@ -194,6 +194,7 @@ export default async function (payload: Payload) {
     lastSeen: number;
     problemIds: string[];
     serviceImpacts: Map<string, number>;
+    configurationEntities: Array<{ id: string; type: string; name: string }>;
   };
 
   const groups = new Map<string, Pattern>();
@@ -219,6 +220,24 @@ export default async function (payload: Payload) {
       .map(entity => text(entity?.name).trim())
       .filter(Boolean);
 
+    const configurationEntities = [
+      ...(p.rootCauseEntity ? [p.rootCauseEntity] : []),
+      ...(Array.isArray(p.impactedEntities) ? p.impactedEntities : []),
+      ...(Array.isArray(p.affectedEntities) ? p.affectedEntities : []),
+    ]
+      .map(entity => ({
+        id: text(entity?.entityId?.id).trim(),
+        type: text(entity?.entityId?.type || entity?.type).trim().toUpperCase(),
+        name: text(entity?.name).trim(),
+      }))
+      .filter(entity =>
+        entity.id &&
+        ['SERVICE', 'SERVICE_METHOD'].includes(entity.type),
+      )
+      .filter((entity, index, all) =>
+        all.findIndex(candidate => candidate.id === entity.id && candidate.type === entity.type) === index,
+      );
+
     const uniqueImpactedServices = [...new Set(impactedServices)];
 
     if (existing) {
@@ -235,6 +254,12 @@ export default async function (payload: Payload) {
           serviceName,
           (existing.serviceImpacts.get(serviceName) ?? 0) + 1,
         );
+      }
+
+      for (const entity of configurationEntities) {
+        if (!existing.configurationEntities.some(candidate => candidate.id === entity.id && candidate.type === entity.type)) {
+          existing.configurationEntities.push(entity);
+        }
       }
 
       if (existing.problemIds.length < 8) {
@@ -258,6 +283,7 @@ export default async function (payload: Payload) {
         lastSeen: start,
         problemIds: [text(p.displayId) || text(p.problemId)],
         serviceImpacts: new Map<string, number>(),
+        configurationEntities,
       };
 
       for (const serviceName of uniqueImpactedServices) {
@@ -403,28 +429,69 @@ export default async function (payload: Payload) {
   };
 
   const candidateConfigurationCache = new Map<string, ThresholdConfiguration>();
-  const candidateKeys = new Set(thresholdCandidates.map(p => {
-    const category = classifyThresholdCategory(p.title);
-    return JSON.stringify([p.rootCauseEntityId, p.rootCauseEntityType, category]);
-  }));
-  await Promise.all([...candidateKeys].map(async serialized => {
-    const [entityId, entityType, category] = JSON.parse(serialized) as [string, string, ThresholdConfiguration['category']];
-    const config = await readEffectiveThresholdConfiguration(entityId, entityType, category);
-    candidateConfigurationCache.set(serialized, config);
-  }));
 
-  const thresholdCandidatesWithConfiguration = thresholdCandidates.map(p => {
-    const category = classifyThresholdCategory(p.title);
-    const serialized = JSON.stringify([p.rootCauseEntityId, p.rootCauseEntityType, category]);
-    return {
-      ...p,
-      thresholdConfiguration: candidateConfigurationCache.get(serialized) ?? {
+  const readCandidateConfiguration = async (
+    candidate: typeof patterns[number],
+  ): Promise<ThresholdConfiguration> => {
+    const category = classifyThresholdCategory(candidate.title);
+    if (category === 'unknown') {
+      return {
         available: false,
         category,
-        note: 'Configuration lookup was not available for this candidate.',
-      },
+        note: 'The candidate title could not be mapped to a supported service anomaly-detection category.',
+      };
+    }
+
+    const entities = candidate.configurationEntities ?? [];
+    if (!entities.length) {
+      return {
+        available: false,
+        category,
+        note: 'No SERVICE or SERVICE_METHOD entity ID was returned with this problem pattern, so the effective alert configuration cannot be resolved.',
+      };
+    }
+
+    const cacheKey = JSON.stringify([
+      entities.map(entity => [entity.id, entity.type]),
+      category,
+    ]);
+
+    const cached = candidateConfigurationCache.get(cacheKey);
+    if (cached) return cached;
+
+    const results = await Promise.all(
+      entities.slice(0, 12).map(async entity => ({
+        entity,
+        config: await readEffectiveThresholdConfiguration(entity.id, entity.type, category),
+      })),
+    );
+
+    const available = results.find(result => result.config.available);
+    if (available) {
+      const resolved = {
+        ...available.config,
+        source: `${available.config.source ?? 'Dynatrace effective anomaly-detection.services configuration'}; entity: ${available.entity.name || available.entity.id}`,
+      };
+      candidateConfigurationCache.set(cacheKey, resolved);
+      return resolved;
+    }
+
+    const firstNote = results.find(result => result.config.note)?.config.note;
+    const unavailable: ThresholdConfiguration = {
+      available: false,
+      category,
+      note: firstNote || 'Dynatrace did not return an effective configuration for the candidate entities.',
     };
-  });
+    candidateConfigurationCache.set(cacheKey, unavailable);
+    return unavailable;
+  };
+
+  const thresholdCandidatesWithConfiguration = await Promise.all(
+    thresholdCandidates.map(async p => ({
+      ...p,
+      thresholdConfiguration: await readCandidateConfiguration(p),
+    })),
+  );
 
   const immediateActions = patterns
     .filter(
