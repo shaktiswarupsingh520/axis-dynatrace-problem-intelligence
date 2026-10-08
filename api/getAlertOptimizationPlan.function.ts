@@ -34,7 +34,7 @@ type EntityConfiguration = {
 
 type ThresholdConfiguration = {
   available: boolean;
-  category: 'failureRate' | 'responseTime' | 'loadDrop' | 'loadSpike' | 'unknown';
+  category: 'failureRate' | 'responseTime' | 'loadDrop' | 'loadSpike' | 'metricEvent' | 'processAvailability' | 'unknown';
   enabled?: boolean;
   detectionMode?: 'auto' | 'fixed';
   threshold?: number;
@@ -366,6 +366,128 @@ export default async function (payload: Payload) {
       normalized.includes('traffic increase')
     ) return 'loadSpike';
     return 'unknown';
+  };
+
+  const readMetricEventConfiguration = async (title: string): Promise<ThresholdConfiguration> => {
+    try {
+      const response = await settingsObjectsClient.getEffectiveSettingsValues({
+        schemaIds: 'builtin:anomaly-detection.metric-events',
+        scope: 'environment',
+        fields: 'schemaId,value',
+        pageSize: 500,
+      });
+
+      const items = Array.isArray(response.items) ? response.items : [];
+      const normalizedTitle = title.trim().toLowerCase();
+      const candidates = items
+        .map(item => item?.value as Row | undefined)
+        .filter((value): value is Row => !!value && typeof value === 'object');
+
+      const scored = candidates.map(value => {
+        const eventTemplate = value.eventTemplate as Row | undefined;
+        const configuredTitle = typeof eventTemplate?.title === 'string' ? eventTemplate.title : '';
+        const summary = typeof value.summary === 'string' ? value.summary : '';
+        const configuredNormalized = configuredTitle.toLowerCase();
+        const summaryNormalized = summary.toLowerCase();
+        let score = 0;
+        if (configuredNormalized === normalizedTitle) score = 100;
+        else if (configuredNormalized && normalizedTitle.includes(configuredNormalized)) score = 80;
+        else if (configuredNormalized && configuredNormalized.includes(normalizedTitle)) score = 70;
+        else if (summaryNormalized === normalizedTitle) score = 60;
+        else if (summaryNormalized && normalizedTitle.includes(summaryNormalized)) score = 50;
+        return { value, configuredTitle, summary, score };
+      }).filter(item => item.score > 0).sort((a, b) => b.score - a.score);
+
+      const match = scored[0];
+      if (!match) {
+        return {
+          available: false,
+          category: 'metricEvent',
+          note: 'No matching Dynatrace metric-event/custom-alert configuration was found for this candidate title.',
+        };
+      }
+
+      const model = match.value.modelProperties as Row | undefined;
+      const modelType = typeof model?.type === 'string' ? model.type : undefined;
+      const threshold = typeof model?.threshold === 'number' ? model.threshold : undefined;
+      const enabled = match.value.enabled === true;
+      const query = match.value.queryDefinition as Row | undefined;
+      const eventTemplate = match.value.eventTemplate as Row | undefined;
+
+      return {
+        available: true,
+        category: 'metricEvent',
+        enabled,
+        detectionMode: modelType === 'STATIC_THRESHOLD' ? 'fixed' : 'auto',
+        threshold,
+        requestsPerMinute: undefined,
+        minutesAbnormalState: typeof model?.samples === 'number' ? model.samples : undefined,
+        source: 'Dynatrace builtin:anomaly-detection.metric-events',
+        note: [
+          match.configuredTitle ? `Matched event: ${match.configuredTitle}` : undefined,
+          typeof eventTemplate?.eventType === 'string' ? `Event type: ${eventTemplate.eventType}` : undefined,
+          typeof query?.metricKey === 'string' ? `Metric: ${query.metricKey}` : undefined,
+          typeof query?.metricSelector === 'string' ? `Metric selector: ${query.metricSelector}` : undefined,
+          typeof model?.alertCondition === 'string' ? `Condition: ${model.alertCondition}` : undefined,
+          typeof model?.samples === 'number' ? `Evaluation window: ${model.samples} minute samples` : undefined,
+        ].filter(Boolean).join(' | '),
+      };
+    } catch (error) {
+      return {
+        available: false,
+        category: 'metricEvent',
+        note: error instanceof Error ? error.message : 'Unable to read Dynatrace metric-event/custom-alert configuration.',
+      };
+    }
+  };
+
+  const readProcessAvailabilityConfiguration = async (title: string): Promise<ThresholdConfiguration> => {
+    try {
+      const response = await settingsObjectsClient.getEffectiveSettingsValues({
+        schemaIds: 'builtin:processavailability',
+        scope: 'environment',
+        fields: 'schemaId,value',
+        pageSize: 500,
+      });
+
+      const items = Array.isArray(response.items) ? response.items : [];
+      const normalizedTitle = title.toLowerCase();
+      const candidates = items
+        .map(item => item?.value as Row | undefined)
+        .filter((value): value is Row => !!value && typeof value === 'object');
+
+      const match = candidates
+        .map(value => {
+          const name = typeof value.name === 'string' ? value.name : '';
+          const score = name && (normalizedTitle.includes(name.toLowerCase()) || name.toLowerCase().includes(normalizedTitle)) ? 80 : 0;
+          return { value, name, score };
+        })
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)[0];
+
+      if (!match) {
+        return {
+          available: false,
+          category: 'processAvailability',
+          note: 'No matching process-availability monitoring rule was found. Process availability can be configured at environment, host-group, or host scope.',
+        };
+      }
+
+      return {
+        available: true,
+        category: 'processAvailability',
+        enabled: match.value.enabled === true,
+        threshold: typeof match.value.minimumProcesses === 'number' ? match.value.minimumProcesses : undefined,
+        source: 'Dynatrace builtin:processavailability',
+        note: match.name ? `Matched monitoring rule: ${match.name}` : undefined,
+      };
+    } catch (error) {
+      return {
+        available: false,
+        category: 'processAvailability',
+        note: error instanceof Error ? error.message : 'Unable to read Dynatrace process-availability configuration.',
+      };
+    }
   };
 
   const readEffectiveThresholdConfiguration = async (
