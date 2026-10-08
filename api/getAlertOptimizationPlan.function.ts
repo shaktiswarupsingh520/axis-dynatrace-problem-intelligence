@@ -27,6 +27,26 @@ type ProblemRow = {
   managementZones?: Array<{ id?: string; name?: string }>;
 };
 
+type ThresholdConfiguration = {
+  available: boolean;
+  category: 'failureRate' | 'responseTime' | 'loadDrop' | 'loadSpike' | 'unknown';
+  enabled?: boolean;
+  detectionMode?: 'auto' | 'fixed';
+  threshold?: number;
+  absoluteIncrease?: number;
+  relativeIncrease?: number;
+  responseTimeMilliseconds?: number;
+  responseTimePercent?: number;
+  slowestResponseTimeMilliseconds?: number;
+  slowestResponseTimePercent?: number;
+  loadPercent?: number;
+  requestsPerMinute?: number;
+  minutesAbnormalState?: number;
+  sensitivity?: string;
+  source?: string;
+  note?: string;
+};
+
 const text = (v: unknown): string => {
   if (v == null) return '';
   if (typeof v === 'string') return v;
@@ -161,6 +181,8 @@ export default async function (payload: Payload) {
     key: string;
     title: string;
     rootCauseEntity: string;
+    rootCauseEntityId: string;
+    rootCauseEntityType: string;
     severity: string;
     impact: string;
     occurrences: number;
@@ -266,8 +288,137 @@ export default async function (payload: Payload) {
     }))
     .sort((a, b) => b.occurrences - a.occurrences || b.openCount - a.openCount);
 
+  const classifyThresholdCategory = (title: string): ThresholdConfiguration['category'] => {
+    const normalized = title.toLowerCase();
+    if (normalized.includes('failure rate') || normalized.includes('failure-rate') || normalized.includes('failure rate increase')) return 'failureRate';
+    if (normalized.includes('response time') || normalized.includes('response-time') || normalized.includes('response time degradation')) return 'responseTime';
+    if (normalized.includes('load drop') || normalized.includes('load-drop')) return 'loadDrop';
+    if (normalized.includes('load spike') || normalized.includes('load-spike')) return 'loadSpike';
+    return 'unknown';
+  };
+
+  const readEffectiveThresholdConfiguration = async (
+    entityId: string,
+    entityType: string,
+    category: ThresholdConfiguration['category'],
+  ): Promise<ThresholdConfiguration> => {
+    if (!entityId || !['SERVICE', 'SERVICE_METHOD'].includes(entityType.toUpperCase()) || category === 'unknown') {
+      return {
+        available: false,
+        category,
+        note: 'The current candidate could not be mapped to a supported service anomaly-detection configuration.',
+      };
+    }
+
+    try {
+      const response = await settingsObjectsClient.getEffectiveSettingsValues({
+        schemaIds: 'builtin:anomaly-detection.services',
+        scope: entityId,
+        fields: 'schemaId,value',
+        pageSize: 10,
+      });
+      const item = Array.isArray(response.items) ? response.items[0] : undefined;
+      const value = item?.value;
+      if (!value || typeof value !== 'object') {
+        return { available: false, category, note: 'No effective anomaly-detection configuration was returned.' };
+      }
+
+      const config = value as Row;
+      const section = config[category === 'failureRate' ? 'failureRate' : category === 'responseTime' ? 'responseTime' : category === 'loadDrop' ? 'loadDrops' : 'loadSpikes'];
+      if (!section || typeof section !== 'object') {
+        return { available: false, category, note: 'The effective configuration did not contain this detection category.' };
+      }
+
+      const sectionValue = section as Row;
+      const base: ThresholdConfiguration = {
+        available: true,
+        category,
+        enabled: sectionValue.enabled === true,
+        detectionMode: sectionValue.detectionMode === 'auto' || sectionValue.detectionMode === 'fixed' ? sectionValue.detectionMode : undefined,
+        source: 'Dynatrace effective anomaly-detection.services configuration',
+      };
+
+      if (category === 'failureRate') {
+        const auto = sectionValue.autoDetection as Row | undefined;
+        const fixed = sectionValue.fixedDetection as Row | undefined;
+        const protection = ((base.detectionMode === 'auto' ? auto?.overAlertingProtection : fixed?.overAlertingProtection) ?? {}) as Row;
+        return {
+          ...base,
+          absoluteIncrease: typeof auto?.absoluteIncrease === 'number' ? auto.absoluteIncrease : undefined,
+          relativeIncrease: typeof auto?.relativeIncrease === 'number' ? auto.relativeIncrease : undefined,
+          threshold: typeof fixed?.threshold === 'number' ? fixed.threshold : undefined,
+          sensitivity: typeof fixed?.sensitivity === 'string' ? fixed.sensitivity : undefined,
+          requestsPerMinute: typeof protection.requestsPerMinute === 'number' ? protection.requestsPerMinute : undefined,
+          minutesAbnormalState: typeof protection.minutesAbnormalState === 'number' ? protection.minutesAbnormalState : undefined,
+        };
+      }
+
+      if (category === 'responseTime') {
+        const auto = sectionValue.autoDetection as Row | undefined;
+        const fixed = sectionValue.fixedDetection as Row | undefined;
+        const protection = ((base.detectionMode === 'auto' ? auto?.overAlertingProtection : fixed?.overAlertingProtection) ?? {}) as Row;
+        const autoAll = auto?.responseTimeAll as Row | undefined;
+        const autoSlowest = auto?.responseTimeSlowest as Row | undefined;
+        const fixedAll = fixed?.responseTimeAll as Row | undefined;
+        const fixedSlowest = fixed?.responseTimeSlowest as Row | undefined;
+        return {
+          ...base,
+          responseTimeMilliseconds: typeof (base.detectionMode === 'auto' ? autoAll?.degradationMilliseconds : fixedAll?.degradationMilliseconds) === 'number'
+            ? (base.detectionMode === 'auto' ? autoAll?.degradationMilliseconds : fixedAll?.degradationMilliseconds) as number
+            : undefined,
+          responseTimePercent: typeof autoAll?.degradationPercent === 'number' ? autoAll.degradationPercent : undefined,
+          slowestResponseTimeMilliseconds: typeof (base.detectionMode === 'auto' ? autoSlowest?.slowestDegradationMilliseconds : fixedSlowest?.slowestDegradationMilliseconds) === 'number'
+            ? (base.detectionMode === 'auto' ? autoSlowest?.slowestDegradationMilliseconds : fixedSlowest?.slowestDegradationMilliseconds) as number
+            : undefined,
+          slowestResponseTimePercent: typeof autoSlowest?.slowestDegradationPercent === 'number' ? autoSlowest.slowestDegradationPercent : undefined,
+          sensitivity: typeof fixed?.sensitivity === 'string' ? fixed.sensitivity : undefined,
+          requestsPerMinute: typeof protection.requestsPerMinute === 'number' ? protection.requestsPerMinute : undefined,
+          minutesAbnormalState: typeof protection.minutesAbnormalState === 'number' ? protection.minutesAbnormalState : undefined,
+        };
+      }
+
+      return {
+        ...base,
+        loadPercent: typeof sectionValue[category === 'loadDrop' ? 'loadDropPercent' : 'loadSpikePercent'] === 'number'
+          ? sectionValue[category === 'loadDrop' ? 'loadDropPercent' : 'loadSpikePercent'] as number
+          : undefined,
+        minutesAbnormalState: typeof sectionValue.minutesAbnormalState === 'number' ? sectionValue.minutesAbnormalState : undefined,
+      };
+    } catch (error) {
+      return {
+        available: false,
+        category,
+        note: error instanceof Error ? error.message : 'Unable to read the effective anomaly-detection configuration.',
+      };
+    }
+  };
+
+  const candidateConfigurationCache = new Map<string, ThresholdConfiguration>();
+  const candidateKeys = new Set(thresholdCandidates.map(p => {
+    const category = classifyThresholdCategory(p.title);
+    return JSON.stringify([p.rootCauseEntityId, p.rootCauseEntityType, category]);
+  }));
+  await Promise.all([...candidateKeys].map(async serialized => {
+    const [entityId, entityType, category] = JSON.parse(serialized) as [string, string, ThresholdConfiguration['category']];
+    const config = await readEffectiveThresholdConfiguration(entityId, entityType, category);
+    candidateConfigurationCache.set(serialized, config);
+  }));
+
+  const thresholdCandidatesWithConfiguration = thresholdCandidates.map(p => {
+    const category = classifyThresholdCategory(p.title);
+    const serialized = JSON.stringify([p.rootCauseEntityId, p.rootCauseEntityType, category]);
+    return {
+      ...p,
+      thresholdConfiguration: candidateConfigurationCache.get(serialized) ?? {
+        available: false,
+        category,
+        note: 'Configuration lookup was not available for this candidate.',
+      },
+    };
+  });
+
   const recurring = patterns.filter(p => p.occurrences >= 2);
-  const thresholdCandidates = patterns
+  let thresholdCandidates = patterns
     .filter(p => p.occurrences >= 5 && p.avgDurationMinutes <= 15 && p.openCount === 0)
     .slice(0, 15);
   const immediateActions = patterns
@@ -298,12 +449,12 @@ export default async function (payload: Payload) {
       uniquePatterns: patterns.length,
       recurringPatterns: recurring.length,
       openProblems: problems.filter(p => text(p.status).toUpperCase() === 'OPEN').length,
-      thresholdReviewCandidates: thresholdCandidates.length,
+      thresholdReviewCandidates: thresholdCandidatesWithConfiguration.length,
       immediateActionCandidates: immediateActions.length,
     },
     severityCounts,
     topPatterns: patterns.slice(0, 50),
-    thresholdReviewCandidates: thresholdCandidates,
+    thresholdReviewCandidates: thresholdCandidatesWithConfiguration,
     immediateActionCandidates: immediateActions,
   }).slice(0, 30000);
 
@@ -376,7 +527,7 @@ Rules:
     },
     severityCounts,
     patterns: patterns.slice(0, 80),
-    thresholdCandidates,
+    thresholdCandidates: thresholdCandidatesWithConfiguration,
     immediateActions,
     assistAnalysis,
     assistStatus,
@@ -384,7 +535,7 @@ Rules:
     methodology: [
       'Recurring pattern = same problem title + root-cause entity + impact level occurring at least twice in the selected lookback window.',
       'Impacted services = Dynatrace SERVICE entities present in impacted/affected entities for each Problem; service occurrence count is the number of Problems in which that service appears for the pattern.',
-      'Threshold/sensitivity review candidate = 5+ occurrences, average duration <=15 minutes, and no currently open occurrence. This is a review signal, not an automatic configuration change.',
+      'Threshold/sensitivity review candidate = 5+ occurrences, average duration <=15 minutes, and no currently open occurrence. The candidate detail now reads the effective Dynatrace anomaly-detection.services configuration for supported service/service-method root causes, including automatic vs fixed detection and the configured threshold values.',
       'Immediate-action candidate = currently open, severe problem category, or average duration >=60 minutes.',
       'Problem history is paginated until the API is exhausted, with a 20-page safety cap (up to 10,000 problems at 500 per page). Data coverage is reported so truncated analysis is never presented as complete.',
       'Exact threshold values are not inferred because historical problem records do not expose the current anomaly-detection configuration.',
