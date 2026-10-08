@@ -245,6 +245,8 @@ export default async function (payload: Payload) {
         key,
         title,
         rootCauseEntity: root,
+        rootCauseEntityId: text(p.rootCauseEntity?.entityId?.id),
+        rootCauseEntityType: text(p.rootCauseEntity?.entityId?.type || p.rootCauseEntity?.type),
         severity,
         impact,
         occurrences: 1,
@@ -271,6 +273,8 @@ export default async function (payload: Payload) {
       key: p.key,
       title: p.title,
       rootCauseEntity: p.rootCauseEntity,
+      rootCauseEntityId: p.rootCauseEntityId,
+      rootCauseEntityType: p.rootCauseEntityType,
       severity: p.severity,
       impact: p.impact,
       occurrences: p.occurrences,
@@ -287,6 +291,11 @@ export default async function (payload: Payload) {
         .sort((a, b) => b.occurrences - a.occurrences),
     }))
     .sort((a, b) => b.occurrences - a.occurrences || b.openCount - a.openCount);
+
+  const recurring = patterns.filter(p => p.occurrences >= 2);
+  let thresholdCandidates = patterns
+    .filter(p => p.occurrences >= 5 && p.avgDurationMinutes <= 15 && p.openCount === 0)
+    .slice(0, 15);
 
   const classifyThresholdCategory = (title: string): ThresholdConfiguration['category'] => {
     const normalized = title.toLowerCase();
@@ -417,10 +426,6 @@ export default async function (payload: Payload) {
     };
   });
 
-  const recurring = patterns.filter(p => p.occurrences >= 2);
-  let thresholdCandidates = patterns
-    .filter(p => p.occurrences >= 5 && p.avgDurationMinutes <= 15 && p.openCount === 0)
-    .slice(0, 15);
   const immediateActions = patterns
     .filter(
       p =>
