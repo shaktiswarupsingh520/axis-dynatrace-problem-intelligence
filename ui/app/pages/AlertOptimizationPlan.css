@@ -69,3 +69,18 @@
 .aop-threshold-unavailable{display:flex;flex-direction:column;gap:4px;padding:12px;background:#f8fafc;color:#5d7285;font-size:10px;line-height:1.45}
 .aop-threshold-unavailable strong{color:#6b4f16;font-size:11px}
 @media(max-width:700px){.aop-threshold-banner{grid-template-columns:1fr}.aop-threshold-banner>div{border-right:0;border-bottom:1px solid #dce5eb}.aop-threshold-banner>div:last-child{border-bottom:0}.aop-threshold-values{grid-template-columns:1fr}}
+
+.aop-threshold-coverage{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding:10px 12px;border-bottom:1px solid #dce5eb;background:#fff}
+.aop-threshold-coverage>div{min-width:0}
+.aop-threshold-coverage span,.aop-threshold-entities-head small{display:block;color:#718496;text-transform:uppercase;font-size:8px;font-weight:900;letter-spacing:.06em}
+.aop-threshold-coverage strong{display:block;margin-top:4px;color:#173f67;font-size:10px;line-height:1.35}
+.aop-threshold-governance{display:flex;flex-direction:column;gap:4px;margin:0 12px 10px;padding:9px 10px;border:1px solid #dce5ec;border-radius:7px;background:#f7fafc;color:#526b80;font-size:9px;line-height:1.45}
+.aop-threshold-governance strong{color:#173b5b;font-size:10px}
+.aop-threshold-entities-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-top:1px solid #dce5eb;background:#f8fafc}
+.aop-threshold-entities-head strong{display:block;color:#173b5b;font-size:10px}
+.aop-threshold-entities-head button{border:1px solid #cbd8e2;background:#fff;border-radius:6px;padding:6px 9px;color:#173f67;font-size:9px;font-weight:800;cursor:pointer}
+.aop-entity-config-table{border-top:1px solid #dce5eb;overflow:auto}
+.aop-entity-config-row{display:grid;grid-template-columns:minmax(180px,1.5fr) 90px 90px minmax(220px,2fr);align-items:center;gap:10px;padding:8px 12px;border-top:1px solid #e5eaf0;font-size:9px;color:#42586b;min-width:650px}
+.aop-entity-config-head{border-top:0;background:#f4f7fa;color:#526273;font-weight:900;text-transform:uppercase;letter-spacing:.05em;font-size:8px}
+.aop-entity-config-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#173f67}
+@media(max-width:700px){.aop-threshold-coverage{grid-template-columns:1fr}.aop-threshold-entities-head{align-items:flex-start;flex-direction:column}}
