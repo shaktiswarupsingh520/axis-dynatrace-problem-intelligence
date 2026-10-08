@@ -4,10 +4,32 @@ import { buildAlertOptimizationEmail, downloadAlertOptimizationPdf, type Optimiz
 
 type Zone = { id: string; name: string };
 type ServiceImpact = { serviceName: string; occurrences: number };
+type ThresholdConfiguration = {
+  available: boolean;
+  category: 'failureRate' | 'responseTime' | 'loadDrop' | 'loadSpike' | 'unknown';
+  enabled?: boolean;
+  detectionMode?: 'auto' | 'fixed';
+  threshold?: number;
+  absoluteIncrease?: number;
+  relativeIncrease?: number;
+  responseTimeMilliseconds?: number;
+  responseTimePercent?: number;
+  slowestResponseTimeMilliseconds?: number;
+  slowestResponseTimePercent?: number;
+  loadPercent?: number;
+  requestsPerMinute?: number;
+  minutesAbnormalState?: number;
+  sensitivity?: string;
+  source?: string;
+  note?: string;
+};
 type Pattern = {
   key: string;
   title: string;
   rootCauseEntity: string;
+  rootCauseEntityId: string;
+  rootCauseEntityType: string;
+  thresholdConfiguration?: ThresholdConfiguration;
   severity: string;
   impact: string;
   occurrences: number;
@@ -252,6 +274,70 @@ export const AlertOptimizationPlan = () => {
                 </div>
 
                 <div className="aop-review-section">
+                  <div className="aop-review-section-title">Current alert configuration</div>
+                  {selectedThresholdCandidate.thresholdConfiguration?.available ? (
+                    <div className="aop-threshold-config">
+                      <div className="aop-threshold-banner">
+                        <div>
+                          <span>Detection status</span>
+                          <strong>{selectedThresholdCandidate.thresholdConfiguration.enabled ? 'Enabled' : 'Disabled'}</strong>
+                        </div>
+                        <div>
+                          <span>Detection mode</span>
+                          <strong>{selectedThresholdCandidate.thresholdConfiguration.detectionMode === 'auto' ? 'Automatic' : selectedThresholdCandidate.thresholdConfiguration.detectionMode === 'fixed' ? 'Manual / Fixed' : 'Not specified'}</strong>
+                        </div>
+                        <div>
+                          <span>Category</span>
+                          <strong>{selectedThresholdCandidate.thresholdConfiguration.category === 'failureRate' ? 'Failure rate' : selectedThresholdCandidate.thresholdConfiguration.category === 'responseTime' ? 'Response time' : selectedThresholdCandidate.thresholdConfiguration.category === 'loadDrop' ? 'Load drop' : selectedThresholdCandidate.thresholdConfiguration.category === 'loadSpike' ? 'Load spike' : 'Other'}</strong>
+                        </div>
+                      </div>
+
+                      {selectedThresholdCandidate.thresholdConfiguration.category === 'failureRate' && (
+                        <div className="aop-threshold-values">
+                          {selectedThresholdCandidate.thresholdConfiguration.detectionMode === 'auto' ? (
+                            <>
+                              <div><span>Absolute increase</span><strong>{selectedThresholdCandidate.thresholdConfiguration.absoluteIncrease ?? '—'} percentage points</strong></div>
+                              <div><span>Relative increase</span><strong>{selectedThresholdCandidate.thresholdConfiguration.relativeIncrease ?? '—'}%</strong></div>
+                            </>
+                          ) : (
+                            <div><span>Configured failure-rate threshold</span><strong>{selectedThresholdCandidate.thresholdConfiguration.threshold ?? '—'}%</strong></div>
+                          )}
+                          <div><span>Minimum requests/min</span><strong>{selectedThresholdCandidate.thresholdConfiguration.requestsPerMinute ?? '—'}</strong></div>
+                          <div><span>Abnormal state duration</span><strong>{selectedThresholdCandidate.thresholdConfiguration.minutesAbnormalState ?? '—'} min</strong></div>
+                          {selectedThresholdCandidate.thresholdConfiguration.sensitivity && <div><span>Sensitivity</span><strong>{selectedThresholdCandidate.thresholdConfiguration.sensitivity}</strong></div>}
+                        </div>
+                      )}
+
+                      {selectedThresholdCandidate.thresholdConfiguration.category === 'responseTime' && (
+                        <div className="aop-threshold-values">
+                          <div><span>All requests threshold</span><strong>{selectedThresholdCandidate.thresholdConfiguration.responseTimeMilliseconds ?? '—'} ms</strong></div>
+                          {selectedThresholdCandidate.thresholdConfiguration.responseTimePercent !== undefined && <div><span>All requests relative increase</span><strong>{selectedThresholdCandidate.thresholdConfiguration.responseTimePercent}%</strong></div>}
+                          <div><span>Slowest 10% threshold</span><strong>{selectedThresholdCandidate.thresholdConfiguration.slowestResponseTimeMilliseconds ?? '—'} ms</strong></div>
+                          {selectedThresholdCandidate.thresholdConfiguration.slowestResponseTimePercent !== undefined && <div><span>Slowest 10% relative increase</span><strong>{selectedThresholdCandidate.thresholdConfiguration.slowestResponseTimePercent}%</strong></div>}
+                          <div><span>Minimum requests/min</span><strong>{selectedThresholdCandidate.thresholdConfiguration.requestsPerMinute ?? '—'}</strong></div>
+                          <div><span>Abnormal state duration</span><strong>{selectedThresholdCandidate.thresholdConfiguration.minutesAbnormalState ?? '—'} min</strong></div>
+                          {selectedThresholdCandidate.thresholdConfiguration.sensitivity && <div><span>Sensitivity</span><strong>{selectedThresholdCandidate.thresholdConfiguration.sensitivity}</strong></div>}
+                        </div>
+                      )}
+
+                      {(selectedThresholdCandidate.thresholdConfiguration.category === 'loadDrop' || selectedThresholdCandidate.thresholdConfiguration.category === 'loadSpike') && (
+                        <div className="aop-threshold-values">
+                          <div><span>Configured load threshold</span><strong>{selectedThresholdCandidate.thresholdConfiguration.loadPercent ?? '—'}%</strong></div>
+                          <div><span>Abnormal state duration</span><strong>{selectedThresholdCandidate.thresholdConfiguration.minutesAbnormalState ?? '—'} min</strong></div>
+                        </div>
+                      )}
+
+                      <small className="aop-threshold-source">{selectedThresholdCandidate.thresholdConfiguration.source}</small>
+                    </div>
+                  ) : (
+                    <div className="aop-threshold-unavailable">
+                      <strong>Current configuration not available</strong>
+                      <span>{selectedThresholdCandidate.thresholdConfiguration?.note || 'No supported anomaly-detection configuration was returned for this candidate.'}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="aop-review-section">
                   <div className="aop-review-section-title">Impacted services</div>
                   {selectedThresholdCandidate.impactedServices?.length ? (
                     <div className="aop-service-table">
@@ -280,7 +366,7 @@ export const AlertOptimizationPlan = () => {
 
                 <div className="aop-review-callout">
                   <strong>Why this is a review candidate</strong>
-                  <p>This pattern occurred at least 5 times, averaged 15 minutes or less, and has no currently open occurrence in the selected lookback. That indicates a possible noise/sensitivity opportunity, but it does <b>not</b> reveal the current Dynatrace threshold.</p>
+                  <p>This pattern occurred at least 5 times, averaged 15 minutes or less, and has no currently open occurrence in the selected lookback. Compare the observed recurrence with the current configuration above before proposing any threshold or sensitivity change.</p>
                 </div>
                 <div className="aop-review-next">
                   <strong>Validation before changing the alert</strong>
