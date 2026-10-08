@@ -4,6 +4,10 @@ import { buildAlertOptimizationEmail, downloadAlertOptimizationPdf, type Optimiz
 
 type Zone = { id: string; name: string };
 type ServiceImpact = { serviceName: string; occurrences: number };
+type EntityConfiguration = {
+  entity: { id: string; type: string; name: string };
+  config: ThresholdConfiguration;
+};
 type ThresholdConfiguration = {
   available: boolean;
   category: 'failureRate' | 'responseTime' | 'loadDrop' | 'loadSpike' | 'unknown';
@@ -22,6 +26,12 @@ type ThresholdConfiguration = {
   sensitivity?: string;
   source?: string;
   note?: string;
+  candidateEntityCount?: number;
+  resolvedEntityCount?: number;
+  configurationVariantCount?: number;
+  configurationCoverage?: 'all' | 'partial' | 'none';
+  resolvedEntity?: { id: string; type: string; name: string };
+  entityConfigurations?: EntityConfiguration[];
 };
 type Pattern = {
   key: string;
@@ -79,6 +89,7 @@ export const AlertOptimizationPlan = () => {
   const [emailSending, setEmailSending] = useState(false);
   const [emailStatus, setEmailStatus] = useState('');
   const [selectedThresholdCandidate, setSelectedThresholdCandidate] = useState<Pattern | null>(null);
+  const [showEntityConfigurations, setShowEntityConfigurations] = useState(false);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -292,6 +303,12 @@ export const AlertOptimizationPlan = () => {
                         </div>
                       </div>
 
+                      <div className="aop-threshold-coverage">
+                        <div><span>Configuration coverage</span><strong>{selectedThresholdCandidate.thresholdConfiguration.resolvedEntityCount ?? 0} / {selectedThresholdCandidate.thresholdConfiguration.candidateEntityCount ?? 0} entities</strong></div>
+                        <div><span>Configuration consistency</span><strong>{selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount === 1 ? "Same configuration across resolved entities" : String(selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount ?? 0) + " configuration variants"}</strong></div>
+                        <div><span>Configuration scope</span><strong>Effective at entity scope; inheritance may apply</strong></div>
+                      </div>
+
                       {selectedThresholdCandidate.thresholdConfiguration.category === 'failureRate' && (
                         <div className="aop-threshold-values">
                           {selectedThresholdCandidate.thresholdConfiguration.detectionMode === 'auto' ? (
@@ -324,6 +341,49 @@ export const AlertOptimizationPlan = () => {
                         <div className="aop-threshold-values">
                           <div><span>Configured load threshold</span><strong>{selectedThresholdCandidate.thresholdConfiguration.loadPercent ?? '—'}%</strong></div>
                           <div><span>Abnormal state duration</span><strong>{selectedThresholdCandidate.thresholdConfiguration.minutesAbnormalState ?? '—'} min</strong></div>
+                        </div>
+                      )}
+
+                      <div className="aop-threshold-governance">
+                        <strong>{selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount && selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount > 1 ? "Entity configurations differ" : "How to interpret these values"}</strong>
+                        <span>{selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount && selectedThresholdCandidate.thresholdConfiguration.configurationVariantCount > 1
+                          ? "The values above are representative of the first resolved entity, not a single global threshold for the whole Management Zone."
+                          : selectedThresholdCandidate.thresholdConfiguration.detectionMode === 'auto'
+                            ? "These are automatic-detection parameters. Dynatrace determines the runtime anomaly threshold from its learned baseline; the displayed values are not one fixed runtime threshold."
+                            : "This is the effective configuration returned for the resolved entities. A setting may be inherited from a broader scope rather than explicitly configured on each entity."}</span>
+                      </div>
+
+                      <div className="aop-threshold-entities-head">
+                        <div><strong>Entity-level configurations</strong><small>{selectedThresholdCandidate.thresholdConfiguration.resolvedEntityCount ?? 0} resolved of {selectedThresholdCandidate.thresholdConfiguration.candidateEntityCount ?? 0} candidate entities</small></div>
+                        <button type="button" onClick={() => setShowEntityConfigurations(value => !value)}>{showEntityConfigurations ? "Hide details" : "View entity-level configurations"}</button>
+                      </div>
+
+                      {showEntityConfigurations && (
+                        <div className="aop-entity-config-table">
+                          <div className="aop-entity-config-row aop-entity-config-head"><span>Entity</span><span>Type</span><span>Mode</span><span>Configuration</span></div>
+                          {(selectedThresholdCandidate.thresholdConfiguration.entityConfigurations ?? []).map(({ entity, config }) => {
+                            const category = config.category === 'failureRate' ? "Failure rate" : config.category === 'responseTime' ? "Response time" : config.category === 'loadDrop' ? "Load drop" : config.category === 'loadSpike' ? "Load spike" : "Other";
+                            const summary = config.category === 'failureRate'
+                              ? config.detectionMode === 'auto'
+                                ? "Auto: +" + (config.absoluteIncrease ?? "—") + " pp / +" + (config.relativeIncrease ?? "—") + "%"
+                                : "Fixed: " + (config.threshold ?? "—") + "%"
+                              : config.category === 'responseTime'
+                                ? String(config.responseTimeMilliseconds ?? "—") + " ms" + (config.responseTimePercent !== undefined ? " / +" + config.responseTimePercent + "%" : "")
+                                : config.category === 'loadDrop'
+                                  ? "Drop " + (config.loadPercent ?? "—") + "%"
+                                  : config.category === 'loadSpike'
+                                    ? "Spike " + (config.loadPercent ?? "—") + "%"
+                                    : category;
+                            return (
+                              <div key={entity.type + ":" + entity.id} className="aop-entity-config-row">
+                                <strong title={entity.id}>{entity.name || entity.id}</strong>
+                                <span>{entity.type}</span>
+                                <span>{config.detectionMode === 'auto' ? "Automatic" : config.detectionMode === 'fixed' ? "Fixed" : "—"}</span>
+                                <span>{summary}</span>
+                              </div>
+                            );
+                          })}
+                          {!selectedThresholdCandidate.thresholdConfiguration.entityConfigurations?.length && <div className="aop-empty">No entity-level configuration records were returned.</div>}
                         </div>
                       )}
 
@@ -435,7 +495,7 @@ export const AlertOptimizationPlan = () => {
               <div className="aop-card-note">Review candidates only. Exact threshold values are not inferred from problem history.</div>
               <div className="aop-list">
                 {plan.thresholdCandidates.slice(0, 12).map(p => (
-                  <button type="button" className="aop-list-row aop-review-row" key={p.key} onClick={() => setSelectedThresholdCandidate(p)}>
+                  <button type="button" className="aop-list-row aop-review-row" key={p.key} onClick={() => { setSelectedThresholdCandidate(p); setShowEntityConfigurations(false); }}>
                     <div>
                       <b>{p.title}</b>
                       <small>{p.rootCauseEntity} · {p.occurrences} occurrences · avg {mins(p.avgDurationMinutes)}</small>
