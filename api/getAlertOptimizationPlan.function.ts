@@ -521,7 +521,7 @@ export default async function (payload: Payload) {
     if (cached) return cached;
 
     const results = await Promise.all(
-      entities.slice(0, 12).map(async entity => ({
+      entities.map(async entity => ({
         entity,
         config: await readEffectiveThresholdConfiguration(entity.id, entity.type, category),
       })),
