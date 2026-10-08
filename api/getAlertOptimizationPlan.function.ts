@@ -54,6 +54,7 @@ type ThresholdConfiguration = {
   resolvedEntityCount?: number;
   configurationVariantCount?: number;
   configurationCoverage?: 'all' | 'partial' | 'none';
+  configurationScope?: string;
   resolvedEntity?: { id: string; type: string; name: string };
   entityConfigurations?: EntityConfiguration[];
 };
@@ -423,6 +424,7 @@ export default async function (payload: Payload) {
         requestsPerMinute: undefined,
         minutesAbnormalState: typeof model?.samples === 'number' ? model.samples : undefined,
         source: 'Dynatrace builtin:anomaly-detection.metric-events',
+        configurationScope: 'Environment-level metric event; actual entity scope is defined by the metric-event configuration.',
         note: [
           match.configuredTitle ? `Matched event: ${match.configuredTitle}` : undefined,
           typeof eventTemplate?.eventType === 'string' ? `Event type: ${eventTemplate.eventType}` : undefined,
@@ -479,6 +481,7 @@ export default async function (payload: Payload) {
         enabled: match.value.enabled === true,
         threshold: typeof match.value.minimumProcesses === 'number' ? match.value.minimumProcesses : undefined,
         source: 'Dynatrace builtin:processavailability',
+        configurationScope: 'Process availability rule; effective scope can be environment, host group, or host.',
         note: match.name ? `Matched monitoring rule: ${match.name}` : undefined,
       };
     } catch (error) {
@@ -610,18 +613,27 @@ export default async function (payload: Payload) {
   ): Promise<ThresholdConfiguration> => {
     const category = classifyThresholdCategory(candidate.title);
     if (category === 'unknown') {
+      const metricEvent = await readMetricEventConfiguration(candidate.title);
+      if (metricEvent.available) return metricEvent;
+
+      const processAvailability = await readProcessAvailabilityConfiguration(candidate.title);
+      if (processAvailability.available) return processAvailability;
+
       return {
-        available: false,
-        category,
+        ...metricEvent,
+        category: 'unknown',
         candidateEntityCount: candidate.configurationEntities?.length ?? 0,
         resolvedEntityCount: 0,
         configurationVariantCount: 0,
         configurationCoverage: 'none',
-        note: 'The candidate title could not be mapped to a supported service anomaly-detection category. Other alerting schemas are not yet resolved here.',
+        note: [metricEvent.note, processAvailability.note].filter(Boolean).join(' ') || 'No supported alerting configuration was found for this candidate.',
       };
     }
 
     const entities = candidate.configurationEntities ?? [];
+    if (category === 'processAvailability') {
+      return readProcessAvailabilityConfiguration(candidate.title);
+    }
     if (!entities.length) {
       return {
         available: false,
