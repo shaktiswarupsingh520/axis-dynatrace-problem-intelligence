@@ -312,6 +312,7 @@ export default async function (payload: Payload) {
       lastSeen: p.lastSeen,
       problemIds: p.problemIds,
       recurrenceRatePerWeek: Number((p.occurrences / 4.2857).toFixed(1)),
+      configurationEntities: p.configurationEntities,
       impactedServices: [...p.serviceImpacts.entries()]
         .map(([serviceName, occurrences]) => ({ serviceName, occurrences }))
         .sort((a, b) => b.occurrences - a.occurrences),
