@@ -327,9 +327,9 @@ export const AlertOptimizationPlan = () => {
 
                       {selectedThresholdCandidate.thresholdConfiguration.category === 'responseTime' && (
                         <div className="aop-threshold-values">
-                          <div><span>All requests threshold</span><strong>{selectedThresholdCandidate.thresholdConfiguration.responseTimeMilliseconds ?? '—'} ms</strong></div>
+                          <div><span>{selectedThresholdCandidate.thresholdConfiguration.detectionMode === 'auto' ? 'Automatic degradation — all requests' : 'Configured threshold — all requests'}</span><strong>{selectedThresholdCandidate.thresholdConfiguration.responseTimeMilliseconds ?? '—'} ms</strong></div>
                           {selectedThresholdCandidate.thresholdConfiguration.responseTimePercent !== undefined && <div><span>All requests relative increase</span><strong>{selectedThresholdCandidate.thresholdConfiguration.responseTimePercent}%</strong></div>}
-                          <div><span>Slowest 10% threshold</span><strong>{selectedThresholdCandidate.thresholdConfiguration.slowestResponseTimeMilliseconds ?? '—'} ms</strong></div>
+                          <div><span>{selectedThresholdCandidate.thresholdConfiguration.detectionMode === 'auto' ? 'Automatic degradation — slowest 10%' : 'Configured threshold — slowest 10%'}</span><strong>{selectedThresholdCandidate.thresholdConfiguration.slowestResponseTimeMilliseconds ?? '—'} ms</strong></div>
                           {selectedThresholdCandidate.thresholdConfiguration.slowestResponseTimePercent !== undefined && <div><span>Slowest 10% relative increase</span><strong>{selectedThresholdCandidate.thresholdConfiguration.slowestResponseTimePercent}%</strong></div>}
                           <div><span>Minimum requests/min</span><strong>{selectedThresholdCandidate.thresholdConfiguration.requestsPerMinute ?? '—'}</strong></div>
                           <div><span>Abnormal state duration</span><strong>{selectedThresholdCandidate.thresholdConfiguration.minutesAbnormalState ?? '—'} min</strong></div>
